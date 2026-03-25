@@ -32,6 +32,7 @@ fn main() {
 
     let request_timeout = Duration::from_millis(1000);    
     let mut service = WorkorderService::new(request_timeout);
+    service.set_enabled(true);
 
     let config_path = "/home/qitech/config.json";
     service.connect(config_path).expect("Connection Failed");
