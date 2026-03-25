@@ -59,7 +59,26 @@ fn main() {
             }
 
             if task.check(total_weight) {
-                plate_counter += 1;
+
+                if let Some(entry) = service.current_entry() {
+
+                    let in_bounds = 
+                        entry.weight_bounds.min <= total_weight 
+                        && total_weight <= entry.weight_bounds.max;
+
+                    writeln!(
+                        file, 
+                        "Plate: {}, Bounds: ({} : {}) -> {}", 
+                        total_weight, 
+                        entry.weight_bounds.min,
+                        entry.weight_bounds.max, 
+                        in_bounds
+                    ).expect("failed to write"); 
+
+                    if in_bounds {
+                        plate_counter += 1;
+                    }
+                };              
             }
 
             if let Err(e) = service.update_send(Instant::now(), plate_counter) {
