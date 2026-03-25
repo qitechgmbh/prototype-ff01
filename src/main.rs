@@ -37,10 +37,6 @@ fn main() {
     let config_path = "/home/qitech/config.json";
     service.connect(config_path).expect("Connection Failed");
 
-    println!("service: {:?}", service);
-    panic!();
-
-
     loop {
         send_requests(&sock_tx, &cmds);
 
@@ -49,7 +45,7 @@ fn main() {
         let w0 = opt_to_string(weight_0);
         let w1 = opt_to_string(weight_1);
 
-        println!("Service: {:?}", service);
+        println!("Service: {:?}", &service);
         println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
 
         // Write to file
