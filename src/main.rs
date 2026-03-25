@@ -1,4 +1,4 @@
-use std::{fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
+use std::{fmt::format, fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
 use std::io::Write;
 
 mod xtrem;
@@ -25,16 +25,13 @@ fn main() {
 
         let (weight_0, weight_1) = collect_data(&sock_rx);
 
-        println!("Data: {:?} | {:?}", weight_0, weight_1);
+        let w0 = opt_to_string(weight_0);
+        let w1 = opt_to_string(weight_1);
+
+        println!("Data: {} | {}", w0, w1);
 
         // Write to file
-        writeln!(
-            file,
-            "{}, {}",
-            opt_to_string(weight_0),
-            opt_to_string(weight_1)
-        )
-        .expect("failed to write");
+        writeln!(file, "{} | {}", w0, w1).expect("failed to write");
 
         std::thread::sleep(Duration::from_millis(300));
     }
@@ -43,8 +40,8 @@ fn main() {
 // Helper to format Option<f32>
 fn opt_to_string(v: Option<f64>) -> String {
     match v {
-        Some(x) => x.to_string(),
-        None => "None".to_string(), // or "NaN"
+        Some(x) => format!("{:.1}", x),
+        None => "_._".to_string(), // or "NaN"
     }
 }
 
