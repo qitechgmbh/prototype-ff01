@@ -37,6 +37,10 @@ fn main() {
     let config_path = "/home/qitech/config.json";
     service.connect(config_path).expect("Connection Failed");
 
+    println!("service: {:?}", service);
+    panic!();
+
+
     loop {
         send_requests(&sock_tx, &cmds);
 
