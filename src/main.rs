@@ -92,8 +92,7 @@ fn collect_data(sock_rx: &UdpSocket) -> (Option<f64>, Option<f64>)
         match sock_rx.recv(&mut buf) {
             Ok(n) => {
                 if let Some((id, weight)) = parse_response(&buf[..n]) {
-                    println!("Received weight {weight} from ID {id}");
-
+                    _ = id;
                     if weight_0.is_some() {
                         weight_1 = Some(weight);
                     } else {
@@ -108,7 +107,7 @@ fn collect_data(sock_rx: &UdpSocket) -> (Option<f64>, Option<f64>)
                 std::thread::sleep(Duration::from_millis(10));
             }
             Err(e) => {
-                println!("Err: [XTREM] Socket error: {:?}", e);
+                println!("Err: Socket error: {:?}", e);
                 break;
             }
         }
