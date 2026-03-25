@@ -85,6 +85,7 @@ impl WorkorderService
         };
 
         if !client.has_pending_request() {
+            self.client = Some(client);
             return Ok(());
         } 
 
