@@ -53,8 +53,8 @@ fn main() {
         let w1 = opt_to_string(weight_1);
 
         if now.duration_since(last) > Duration::from_millis(1000) {
-            println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
-            println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
+            // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
+            // println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
             last = now;
         }
 
