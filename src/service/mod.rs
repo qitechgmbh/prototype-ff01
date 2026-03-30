@@ -142,6 +142,7 @@ impl WorkorderService
                     quantity_counted: plates_counted,
                 };
 
+                todo!("Don't complete yet");
                 Request::Finalize(request_data)
             },
         };
@@ -169,57 +170,60 @@ impl WorkorderService
 // utils
 impl WorkorderService 
 {
+    fn update_state_0(response: Response) -> anyhow::Result<State> {
+        let Response::GetNextEntry(maybe_entry) = response else {
+            return Err(anyhow!("Tag Mismatch"));
+        };  
+
+        let Some(entry) = maybe_entry else {
+            // no entry found
+            return Ok(State::Zero);
+        };
+
+        let now = Local::now();
+        let start_date = Date { year: now.year(), month: now.month(), day: now.day() };
+        let from_time = Time { hour: now.hour(), minute: now.minute() };
+
+        let data = StateOneData { entry, start_date, from_time };
+
+        Ok(State::One(data))
+    }
+
+    fn update_state_1(data_s1: StateOneData, response: Response) -> anyhow::Result<State> {
+        let Response::GetWorkerSubmission(maybe_workorder_submission) = response else {
+            return Err(anyhow!("Tag Mismatch"));
+        };
+
+        let Some((personnel_id, quantity_scrap)) = maybe_workorder_submission else {
+            // no entry found
+            return Ok(State::One(data_s1));
+        };
+
+        let data_s2 = StateTwoData { state_one_data: data_s1, personnel_id, quantity_scrap };
+        Ok(State::Two(data_s2))
+    }
+
+    fn update_state_2(data_s2: StateTwoData, response: Response) -> anyhow::Result<State> {
+        _ = data_s2;
+
+        let Response::Finalize = response else {
+            return Err(anyhow!("Tag Mismatch"));
+        };
+
+        Ok(State::Zero)
+    }
+
     fn handle_response(&mut self, response: Response) -> anyhow::Result<()> {
         use State::*;
 
         let current_state = std::mem::take(&mut self.state);
 
-        self.state = match current_state {
-            Zero => {
-                let Response::GetNextEntry(maybe_entry) = response else {
-                    return Err(anyhow!("Tag Mismatch"));
-                };  
-
-                let Some(entry) = maybe_entry else {
-                    // no entry found
-                    return Ok(());
-                };
-
-                let now = Local::now();
-                let start_date = Date { year: now.year(), month: now.month(), day: now.day() };
-                let from_time = Time { hour: now.hour(), minute: now.minute() };
-
-                let data = StateOneData { entry, start_date, from_time };
-
-                State::One(data)
-            },
-            One(state_one_data) => {
-                let Response::GetWorkerSubmission(maybe_workorder_submission) = response else {
-                    return Err(anyhow!("Tag Mismatch"));
-                };
-
-                let Some((personnel_id, quantity_scrap)) = maybe_workorder_submission else {
-                    // no entry found
-                    return Ok(());
-                };
-
-                let data = StateTwoData { state_one_data, personnel_id, quantity_scrap };
-
-                println!("Final data: {:?}", data);
-                panic!("Order completed");
-
-                State::Two(data)
-            },
-            Two(state_two_data) => {
-                _ = state_two_data;
-
-                let Response::Finalize = response else {
-                    return Err(anyhow!("Tag Mismatch"));
-                };
-
-                State::Zero
-            },
-        };
+        self.state = match current_state
+        {
+            Zero      => Self::update_state_0(response),
+            One(data) => Self::update_state_1(data, response),
+            Two(data) => Self::update_state_2(data, response),
+        }?;
 
         Ok(())
     }
