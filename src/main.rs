@@ -54,7 +54,7 @@ fn main() {
 
         if now.duration_since(last) > Duration::from_millis(1000) {
             // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
-            // println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
+            println!("Data: {} | {} -> ({})", w0, w1, plate_counter);
             last = now;
         }
 
@@ -69,7 +69,7 @@ fn main() {
                 println!("Error while update_recv: {}", e);
             }
 
-            if task.check(weight_total, &mut logger) {
+            if task.check(weight_total) {
 
                 if let Some(entry) = service.current_entry() {
 

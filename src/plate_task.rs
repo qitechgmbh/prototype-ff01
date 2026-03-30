@@ -26,7 +26,7 @@ impl PlateDetectTask {
         self.recorded = false;
     }
 
-    pub fn check(&mut self, weight: f64, logger: &mut Logger) -> bool {
+    pub fn check(&mut self, weight: f64) -> bool {
 
         let Some(current_peak) = self.peak else {
             // First sample initializes peak
@@ -41,7 +41,6 @@ impl PlateDetectTask {
             self.peak = Some(weight);
             self.seen_rising = true;
             self.recorded = false;
-
             println!("Updated peak: {}", weight);
             return false;
         }
@@ -55,17 +54,14 @@ impl PlateDetectTask {
         // Compute drop from peak
         let drop = current_peak - weight;
 
-        println!("Drop from peak: {}", drop);
-
         if drop >= Self::DETECTION_DELTA {
             self.recorded = true;
             self.seen_rising = false;
 
-            println!("Detected plate: {:?}", self.peak);
+            println!("Recording plate: {:?}", self.peak);
             return true;
         }
 
-        println!("Drop too small");
         false
     }
 }
