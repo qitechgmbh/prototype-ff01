@@ -16,11 +16,6 @@ impl PlateDetectTask {
         }
     }
 
-    fn reset(&mut self) {
-        self.peak = None;
-        self.seen_rising = false;
-    }
-
     pub fn check(&mut self, weight: f64) -> Option<f64> {
 
         let Some(current_peak) = self.peak else {
@@ -56,4 +51,9 @@ impl PlateDetectTask {
 
         None
     }
+
+    pub fn reset(&mut self) {
+        self.peak = None;
+        self.seen_rising = false;
+    } 
 }
