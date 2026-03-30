@@ -38,8 +38,12 @@ fn main() {
 
     let mut service_state: u32 = 0;
 
+    let then = Instant::now();
+
     loop {
         let now = Instant::now();
+
+        let time = now.duration_since(then).as_millis();
 
         send_requests(&sock_tx, &cmds);
 
@@ -58,7 +62,7 @@ fn main() {
         let wt = opt_to_string(weight_total);
 
         // Write to file
-        logger.log_scales(&format!("[{}], {}, {}, {}", now.elapsed().as_secs_f64(), w0, w1, wt));
+        logger.log_scales(&format!("[{}], {}, {}, {}", time, w0, w1, wt));
 
         if let Some(weight_total) = weight_total {
             if let Err(e) = service.update_recv() {
@@ -92,7 +96,7 @@ fn main() {
         }
 
         if service_state != service.state.index() {
-            logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), service.state));
+            logger.log_service(&format!("[{}], {:?}", time, service.state));
             service_state = service.state.index();
 
             match &service.state {
@@ -101,10 +105,10 @@ fn main() {
                 },
                 service::State::One(data) => {
                     logger.set_order(Some(data.entry.doc_entry));
-                    logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), data));
+                    logger.log_service(&format!("[{}], {:?}", time, data));
                 },
                 service::State::Two(data) => {
-                    logger.log_service(&format!("[{}], {:?}", now.elapsed().as_secs_f64(), data));
+                    logger.log_service(&format!("[{}], {:?}", time, data));
                 },
             }
 
