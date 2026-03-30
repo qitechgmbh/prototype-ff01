@@ -83,6 +83,8 @@ fn main() {
                     if in_bounds {
                         plate_counter += 1;
                     }
+
+                    task.reset();
                 };              
             }
 
