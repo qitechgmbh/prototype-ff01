@@ -77,6 +77,15 @@ fn main() {
                         entry.weight_bounds.min <= weight_total 
                         && weight_total <= entry.weight_bounds.max;
 
+                    logger.log_task(&format!(
+                        "[{}], {}, {}, {}, {}", 
+                        now.elapsed().as_secs_f64(), 
+                        weight_total,                         
+                        entry.weight_bounds.min,
+                        entry.weight_bounds.max, 
+                        in_bounds
+                    ));
+
                     // use newline to easier find plate measurements
                     logger.log_scales(&format!(""));
 
