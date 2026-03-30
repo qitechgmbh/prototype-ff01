@@ -7,7 +7,7 @@ pub struct PlateDetectTask {
 impl PlateDetectTask {
 
     // In Kilograms
-    const DETECTION_DELTA: f64 = 3.3;
+    const DETECTION_DELTA: f64 = 4.4;
 
     pub fn new() -> Self {
         Self {
