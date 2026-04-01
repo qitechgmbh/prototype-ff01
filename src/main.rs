@@ -60,7 +60,7 @@ fn main() {
 
         if let Some(weight_total) = weight_total {
 
-            let weight_total = weight_total - 295.2; // hard coded tare value
+            let weight_total = weight_total - 284.2; // hard coded tare value
 
             if now.duration_since(last) > Duration::from_millis(1000) {
                 // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
