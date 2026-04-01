@@ -65,6 +65,9 @@ fn main() {
         logger.log_scales(&format!("[{}], {}, {}, {}", time, w0, w1, wt));
 
         if let Some(weight_total) = weight_total {
+
+            let weight_total = weight_total - 295.2; // hard coded tare value
+
             if let Err(e) = service.update_recv() {
                 println!("Error while update_recv: {}", e);
             }
