@@ -1,6 +1,8 @@
 use std::{fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
 use std::io::Write;
 
+mod svc;
+
 mod logging;
 
 mod xtrem;
@@ -8,8 +10,8 @@ use xtrem::*;
 
 mod service;
 
-mod plate_task;
-use plate_task::PlateDetectTask;
+mod plate_detect_task;
+use plate_detect_task::PlateDetectTask;
 
 use crate::{logging::Logger, service::WorkorderService};
 
@@ -234,3 +236,6 @@ fn parse_response(buf: &[u8]) -> Option<(u8, f64)> {
         None
     }
 }
+
+
+// assumptions: service last -> 
