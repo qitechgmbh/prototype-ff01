@@ -80,8 +80,6 @@ impl WorkorderService
     }
 
     pub fn update_recv(&mut self) -> anyhow::Result<()> {
-        println!("update recv {:?}", &self);
-
         let Some(client) = &mut self.client else {
             return Ok(());
         };
@@ -100,13 +98,13 @@ impl WorkorderService
             }
         };
 
+        println!("received response! {:?}", &response);
+
         self.handle_response(response)?;
         return Ok(());
     }
 
     pub fn update_send(&mut self, now: Instant, plates_counted: u32) -> anyhow::Result<()>  {
-        println!("update send {:?}", &self);
-
         let Some(client) = &mut self.client else {
             return Ok(());
         };
@@ -114,6 +112,11 @@ impl WorkorderService
         if client.has_pending_request() {
             return Ok(());
         } 
+
+        if self.last_request_ts + self.request_timeout < now {
+            // timeout nor reached, can'T send request yet
+            return Ok(());
+        }
 
         use State::*;
 
@@ -150,10 +153,7 @@ impl WorkorderService
             },
         };
 
-        if self.last_request_ts + self.request_timeout < now {
-            // timeout nor reached, can'T send request yet
-            return Ok(());
-        }
+        println!("Sending request!: {:?}", &request);
 
         client.queue_request(request).expect("Should be able to enqueue");
         self.last_request_ts = now;
@@ -171,8 +171,21 @@ impl WorkorderService
 }
 
 // utils
-impl WorkorderService 
-{
+impl WorkorderService {
+    fn handle_response(&mut self, response: Response) -> anyhow::Result<()> {
+        use State::*;
+
+        let current_state = std::mem::take(&mut self.state);
+
+        self.state = match current_state {
+            Zero      => Self::update_state_0(response),
+            One(data) => Self::update_state_1(data, response),
+            Two(data) => Self::update_state_2(data, response),
+        }?;
+
+        Ok(())
+    }
+
     fn update_state_0(response: Response) -> anyhow::Result<State> {
         let Response::GetNextEntry(maybe_entry) = response else {
             return Err(anyhow!("Tag Mismatch"));
@@ -214,19 +227,5 @@ impl WorkorderService
         };
 
         Ok(State::Zero)
-    }
-
-    fn handle_response(&mut self, response: Response) -> anyhow::Result<()> {
-        use State::*;
-
-        let current_state = std::mem::take(&mut self.state);
-
-        self.state = match current_state {
-            Zero      => Self::update_state_0(response),
-            One(data) => Self::update_state_1(data, response),
-            Two(data) => Self::update_state_2(data, response),
-        }?;
-
-        Ok(())
     }
 }
