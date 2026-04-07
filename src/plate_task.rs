@@ -5,7 +5,6 @@ pub struct PlateDetectTask {
 }
 
 impl PlateDetectTask {
-
     pub fn new() -> Self {
         Self {
             peak: None,
@@ -14,7 +13,6 @@ impl PlateDetectTask {
     }
 
     pub fn check(&mut self, weight: f64) -> Option<f64> {
-
         let Some(trigger) = self.trigger else {
             return None;
         };
