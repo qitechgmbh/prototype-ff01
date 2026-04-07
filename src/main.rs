@@ -27,7 +27,7 @@ fn main() {
     let mut plate_counter: u32 = 0;
     let mut task = PlateDetectTask::new();
 
-    let request_timeout = Duration::from_millis(1000);    
+    let request_timeout = Duration::from_millis(2500);    
     let mut service = WorkorderService::new(request_timeout);
     service.set_enabled(true);
 
