@@ -98,8 +98,6 @@ impl WorkorderService
             }
         };
 
-        println!("received response! {:?}", &response);
-
         self.handle_response(response)?;
         return Ok(());
     }
@@ -152,8 +150,6 @@ impl WorkorderService
                 Request::Finalize(request_data)
             },
         };
-
-        println!("Sending request!: {:?} | {:?}", &request, self.state.index());
 
         client.queue_request(request).expect("Should be able to enqueue");
         self.last_request_ts = now;
