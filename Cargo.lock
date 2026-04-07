@@ -157,7 +157,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 [[package]]
 name = "beas_bsl"
 version = "0.1.0"
-source = "git+https://github.com/qitechgmbh/beas-bsl.git?branch=main#8e5ce718405c0281efe61326783b55f1620d5f68"
+source = "git+https://github.com/qitechgmbh/beas-bsl.git?rev=0647cc0#0647cc0c05b46ce802ab0eac9213f5fc20d7adb9"
 dependencies = [
  "serde",
  "serde_json",
@@ -716,7 +716,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 [[package]]
 name = "stahlwerk_extension"
 version = "0.1.0"
-source = "git+https://github.com/qitechgmbh/stahlwerk-extension.git?rev=e341013#e3410132361abe5a1ab3a04ada13c635b58f6c18"
+source = "git+https://github.com/qitechgmbh/stahlwerk-extension.git?rev=e1e7b41#e1e7b4113ca0433df12bbfea9849a28f49279398"
 dependencies = [
  "beas_bsl",
  "serde",
