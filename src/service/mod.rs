@@ -113,8 +113,8 @@ impl WorkorderService
             return Ok(());
         } 
 
-        if self.last_request_ts + self.request_timeout < now {
-            // timeout nor reached, can'T send request yet
+        if now < self.last_request_ts + self.request_timeout {
+            // timeout not reached, can't send request yet
             return Ok(());
         }
 
