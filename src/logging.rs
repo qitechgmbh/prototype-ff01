@@ -27,9 +27,10 @@ impl Logger {
         let folder_path = format!("/home/qitech/ff01_orders/order_{}", order_id);
         let path = Path::new(&folder_path);
 
+        /*
         if path.exists() {
             fs::remove_dir_all(&path).expect("Failed to remove existing folder");
-        }
+        } */
 
         // Recursive directory creation
         fs::create_dir_all(&path).expect("Failed to create folder recursively");
