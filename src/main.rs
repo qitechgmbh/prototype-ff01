@@ -26,8 +26,8 @@ fn main() {
         config_path: "/home/qitech/config.json".to_string(),
         reconnect_attempts_max: 10,
         timeout_reconnect: Duration::from_millis(2500),
-        timeout_heartbeat: Duration::from_millis(500),
-        timeout_sending:   Duration::from_millis(50),
+        timeout_heartbeat: Duration::from_millis(10_000),
+        timeout_sending:   Duration::from_millis(100),
     };
 
     // state
