@@ -126,8 +126,8 @@ impl Service {
     fn create_connection(config_path: &str) -> anyhow::Result<Connection> {
         let client = Self::create_client(config_path)?;
 
-        let (service_sender, worker_receiver)  = bounded::<Request>(2);
-        let (worker_sender,  service_receiver) = bounded::<Response>(2);
+        let (service_sender, worker_receiver)  = bounded::<Request>(512);
+        let (worker_sender,  service_receiver) = bounded::<Response>(512);
         
         let connection = Connection::new(service_sender, service_receiver);
         let worker     = Worker::new(client, worker_sender, worker_receiver);
