@@ -1,6 +1,7 @@
 use std::{time::{Duration, Instant}};
 
 mod logging;
+use chrono::Date;
 use logging::Logger;
 
 mod xtrem;
@@ -68,9 +69,11 @@ fn main() {
                 None => (0.0, 0.0),
             };
 
+            let chrono_now = chrono::Local::now();
+
             println!(
-                "Data: {} ({} | {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
-                wt, w0, w1, trigger, peak, plate_count, service.state().index()
+                "Data: {} -> {} ({} | {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
+                chrono_now, wt, w0, w1, trigger, peak, plate_count, service.state().index()
             );
 
             last_print_ts = now;
