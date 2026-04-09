@@ -117,7 +117,7 @@ fn main() {
                 && weight_total <= entry.weight_bounds.max;
 
             let msg = format!(
-                "[{}], {}, {}, {}, {}, {}", 
+                "{}, {}, {}, {}, {}, {}", 
                 time, 
                 plate,
                 drop,                         
