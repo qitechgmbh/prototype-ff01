@@ -1,4 +1,4 @@
-use std::{fs::{self, File}, path::Path};
+use std::{fs::{self, File, OpenOptions}, path::Path};
 use std::io::Write;
 
 
@@ -37,11 +37,25 @@ impl Logger {
         // Create 3 CSV files inside the folder
         let scales_path  = path.join("scales.csv");
         let task_path    = path.join("task.csv");
-        let service_path = path.join("service.csv");
+        let service_path = path.join("service.log");
 
-        let scales_file  = File::create(scales_path).expect("Failed to create scales.csv");
-        let task_file    = File::create(task_path).expect("Failed to create task.csv");
-        let service_file = File::create(service_path).expect("Failed to create service.csv");
+        let scales_file = OpenOptions::new()
+            .create(true)   // create if missing
+            .append(true)   // open in append mode
+            .open(scales_path)
+            .expect("Failed to open scales.csv");
+
+        let task_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(task_path)
+            .expect("Failed to open task.csv");
+
+        let service_file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(service_path)
+            .expect("Failed to open service.log");
 
         // Store in entry
         self.entry = Some(Entry {
