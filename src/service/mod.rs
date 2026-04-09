@@ -84,9 +84,9 @@ impl Service {
             
             self.reconnect_attempts = 0;
             self.last_heartbeat_ts  = now;
-            self.connection.take().unwrap()
+            self.connection.as_mut().unwrap()
         } else {
-            self.connection.take().unwrap()
+            self.connection.as_mut().unwrap()
         };
 
         if connection.has_pending() {
@@ -97,11 +97,8 @@ impl Service {
                     self.connection = None;
                 }
 
-                self.connection = Some(connection);
                 return Ok(());
             };
-
-            self.connection = Some(connection);
 
             match response {
                 Response::NextState(state) => {
