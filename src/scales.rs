@@ -44,7 +44,7 @@ impl Scales {
     }
 
     pub fn weight_1(&self) -> Option<f64> {
-        let tare: f64 = 130.0;
+        let tare: f64 = 130.2;
         self.weight_1.map(|x| x - tare)
     }
 
