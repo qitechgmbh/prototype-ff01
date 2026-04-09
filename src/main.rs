@@ -72,8 +72,8 @@ fn main() {
             let chrono_now = chrono::Local::now();
 
             println!(
-                "Data: {} -> {} ({} | {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
-                chrono_now, wt, w0, w1, trigger, peak, plate_count, service.state().index()
+                "{} :: weight: ({} + {} = {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
+                chrono_now, w0, w1, wt, trigger, peak, plate_count, service.state().index()
             );
 
             last_print_ts = now;
