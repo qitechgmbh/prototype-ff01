@@ -69,8 +69,8 @@ fn main() {
             };
 
             println!(
-                "Data: {} | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
-                wt, trigger, peak, plate_count, service.state().index()
+                "Data: {} ({} | {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
+                wt, w0, w1, trigger, peak, plate_count, service.state().index()
             );
 
             last_print_ts = now;
