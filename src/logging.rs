@@ -3,7 +3,8 @@ use std::io::Write;
 
 
 pub struct Logger {
-    entry: Option<Entry>
+    entry: Option<Entry>,
+    scales_global: File,
 }
 
 pub struct Entry {
@@ -14,7 +15,21 @@ pub struct Entry {
 
 impl Logger {
     pub fn new() -> Self {
-        Self { entry: None }
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
+
+        let timestamp = now.as_secs();
+
+        let scales_global = OpenOptions::new()
+            .create(true)   // create if missing
+            .append(true)   // open in append mode
+            .open(format!("/home/qitech/scales_{}", timestamp))
+            .expect("Failed to open globa_scales.csv");
+
+        Self { entry: None, scales_global }
     }
 
     pub fn set_order(&mut self, order_id: Option<i32>) {
@@ -67,6 +82,8 @@ impl Logger {
     }
 
     pub fn log_scales(&mut self, data: &str) {
+        writeln!(self.scales_global, "{}", data).expect("Failed to write to scales.csv");
+
         if let Some(entry) = &mut self.entry {
             writeln!(entry.scales, "{}", data).expect("Failed to write to scales.csv");
         }

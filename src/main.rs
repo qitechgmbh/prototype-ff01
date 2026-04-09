@@ -61,7 +61,7 @@ fn main() {
         let wt = opt_f64_to_string(scales.weight_total());
 
         // Write to file
-        logger.log_scales(&format!("[{}], {}, {}, {}", time, w0, w1, wt));
+        logger.log_scales(&format!("{}, {}, {}, {}", time, w0, w1, wt));
 
         if now.duration_since(last_print_ts) > Duration::from_millis(1000) {
             let (trigger, peak) = match &task {
