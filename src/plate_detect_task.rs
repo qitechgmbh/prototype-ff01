@@ -1,21 +1,19 @@
 #[derive(Debug, Clone)]
 pub struct PlateDetectTask {
     pub peak:    Option<f64>,
-    pub trigger: Option<f64>,
+    pub trigger: f64,
 }
 
 impl PlateDetectTask {
-    pub fn new() -> Self {
+    pub fn new(trigger: f64) -> Self {
         Self {
+            trigger,
             peak: None,
-            trigger: None,
         }
     }
 
     pub fn check(&mut self, weight: f64) -> Option<f64> {
-        let Some(trigger) = self.trigger else {
-            return None;
-        };
+        let trigger = self.trigger;
 
         let Some(current_peak) = self.peak else {
             if weight >= trigger {
@@ -35,19 +33,10 @@ impl PlateDetectTask {
         let drop = current_peak - weight;
 
         // needs to drop to 1/3 of trigger
-        if drop < trigger * 0.66 {
+        if drop < trigger * 0.33 {
             return None;
         }
 
         return self.peak.take();
     }
-
-    pub fn reset(&mut self) {
-        self.peak = None;
-    } 
-
-    pub fn set_trigger(&mut self, value: Option<f64>) {
-        self.trigger = value;
-        self.reset();
-    }   
 }

@@ -1,44 +1,52 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use anyhow::anyhow;
-use chrono::{Datelike, Local, Timelike};
-use stahlwerk_extension::{Date, Time};
+use beas_bsl::{Client, ClientConfig};
 
-use stahlwerk_extension::ff01::{
-    Entry, 
-    FinalizeRequest, 
-    ProxyClient, 
-    ProxyTransactionError, 
-    Request, 
-    Response
-};
+mod state;
+use crossbeam::channel::bounded;
+pub use state::{State, StateOne, StateTwo};
 
 mod types;
-pub use types::{State, StateOneData, StateTwoData};
+use types::{Request, Response, Connection};
+pub use types::Config;
+
+mod worker;
+use worker::Worker;
 
 #[derive(Debug)]
-pub struct WorkorderService 
-{
-    // config / dependencies
-    pub enabled: bool,
-    pub client: Option<ProxyClient>,
-    pub request_timeout: Duration,
+pub struct Service {
+    config: Config,
 
-    pub state: State,
-    pub last_request_ts: Instant,
+    // state
+    enabled: bool,
+    state: State,
+    reconnect_attempts: u32,
+    last_heartbeat_ts: Instant,
+    last_reconnect_ts: Instant,
+    last_send_ts:      Instant,
+    connection: Option<Connection>,
 }
 
 // public interface
-impl WorkorderService 
-{
-    pub fn new(request_timeout: Duration) -> Self {
+impl Service {
+    pub fn new(config: Config) -> Self {
+        let now =  Instant::now();
+
         Self { 
+            config,
             enabled: false, 
-            client: None, 
             state: State::Zero,
-            request_timeout, 
-            last_request_ts: Instant::now(), 
+            reconnect_attempts: 0,
+            last_heartbeat_ts: now,
+            last_reconnect_ts: now,
+            last_send_ts:      now,
+            connection: None,
         }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled
     }
 
     pub fn set_enabled(&mut self, value: bool) {
@@ -46,182 +54,100 @@ impl WorkorderService
         self.enabled = value;
     }
 
-    pub fn connect(&mut self, config_path: &str) -> anyhow::Result<()> {
-        use stahlwerk_extension::ff01::ProxyClient;
-        use stahlwerk_extension::ClientConfig;
+    pub fn state(&self) -> &State {
+        &self.state
+    }
 
-        if self.client.is_some() {
+    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<()> {
+        if !self.enabled {
+            self.state = State::Zero;
+            self.connection = None;
             return Ok(());
         }
 
-        self.state = State::Zero;
+        let mut connection = if self.connection.is_none() {
+            self.reconnect_attempts += 1;
 
-        let config = ClientConfig::from_file(config_path)
-            .map_err(|e| anyhow!("[FF01] Failed to read Config: {:?}", e))?;
-
-        let client = ProxyClient::new(config)
-            .map_err(|e| anyhow!("[FF01] Failed to create Client: {:?}", e))?;
-   
-        self.client = Some(client);
-        return Ok(())
-    }
-
-    pub fn disconnect(&mut self) {
-        self.state = State::Zero;
-        self.client = None;
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.client.is_some()
-    }
-
-    pub fn update_recv(&mut self) -> anyhow::Result<()> {
-        let Some(client) = &mut self.client else {
-            return Ok(());
-        };
-
-        if !client.has_pending_request() {
-            return Ok(());
-        } 
-
-        let response = match client.poll_response() {
-            Ok(v) => v,
-            Err(e) => {
-                match e {
-                    ProxyTransactionError::Pending => return Ok(()),
-                    e => return Err(anyhow!("PollResponseErr: {:?}", e)) 
-                }
+            if self.reconnect_attempts > self.config.reconnect_attempts_max {
+                panic!("Failed to connect, exceed reconnect_attempts_max!");
             }
+
+            if self.enabled && now.duration_since(self.last_reconnect_ts) > self.config.timeout_reconnect {
+                self.last_reconnect_ts = now;
+                println!("Event: Establishing connection");
+                let connection = Self::create_connection(&self.config.config_path)?;
+                self.connection = Some(connection);
+                self.state = State::Zero;
+            } else {
+                return Ok(());
+            }
+            
+            self.reconnect_attempts = 0;
+            self.last_heartbeat_ts  = now;
+            self.connection.take().unwrap()
+        } else {
+            self.connection.take().unwrap()
         };
 
-        self.handle_response(response)?;
+        if connection.has_pending() {
+            let Some(response) = connection.recv() else {
+                if now.duration_since(self.last_heartbeat_ts) > self.config.timeout_heartbeat {
+                    println!("Event: Heartbeat timed out, dropping connection");
+                    self.state = State::Zero;
+                    self.connection = None;
+                }
+
+                self.connection = Some(connection);
+                return Ok(());
+            };
+
+            self.connection = Some(connection);
+
+            match response {
+                Response::NextState(state) => {
+                    self.state = state;
+                },
+                Response::Error(error) => {
+                    return Err(anyhow!("Error in response: {:?}", error));
+                },
+            }
+        } else {
+            if now.duration_since(self.last_send_ts) < self.config.timeout_sending {
+                return Ok(());
+            }
+
+            connection.send(self.state.clone(), plate_count);
+            self.last_send_ts = now;
+        }
+
         return Ok(());
-    }
-
-    pub fn update_send(&mut self, now: Instant, plates_counted: u32) -> anyhow::Result<()>  {
-        let Some(client) = &mut self.client else {
-            return Ok(());
-        };
-
-        if client.has_pending_request() {
-            return Ok(());
-        } 
-
-        if now < self.last_request_ts + self.request_timeout {
-            // timeout not reached, can't send request yet
-            return Ok(());
-        }
-
-        use State::*;
-
-        let request = match &self.state {
-            Zero => Request::GetNextEntry,
-            One(data) => Request::GetWorkerSubmission(&data.entry),
-            Two(data2) => {
-                let data1 = &data2.state_one_data;
-
-                let doc_entry = data1.entry.doc_entry;
-
-                let start_date = data1.start_date;
-                let from_time = data1.from_time;
-
-                let personnel_id = data2.personnel_id.clone();
-                let quantity_scrap = data2.quantity_scrap;
-
-                let chrono_now = Local::now();
-                let end_date = Date { year: chrono_now.year(), month: chrono_now.month(), day: chrono_now.day() };
-                let to_time = Time { hour: chrono_now.hour(), minute: chrono_now.minute() };
-
-                let request_data = FinalizeRequest {
-                    doc_entry,
-                    personnel_id,
-                    start_date,
-                    end_date,
-                    from_time,
-                    to_time,
-                    quantity_scrap,
-                    quantity_counted: plates_counted,
-                };
-
-                Request::Finalize(request_data)
-            },
-        };
-
-        client.queue_request(request).expect("Should be able to enqueue");
-        self.last_request_ts = now;
-        
-        Ok(())
-    }
-
-    pub fn current_entry(&self) -> Option<&Entry> {
-        match &self.state {
-            State::Zero => None,
-            State::One(data) => Some(&data.entry),
-            State::Two(data) => Some(&data.state_one_data.entry),
-        }
     }
 }
 
 // utils
-impl WorkorderService {
-    fn handle_response(&mut self, response: Response) -> anyhow::Result<()> {
-        use State::*;
+impl Service {
+    fn create_connection(config_path: &str) -> anyhow::Result<Connection> {
+        let client = Self::create_client(config_path)?;
 
-        let current_state = std::mem::take(&mut self.state);
+        let (service_sender, worker_receiver)  = bounded::<Request>(1);
+        let (worker_sender,  service_receiver) = bounded::<Response>(1);
+        
+        let connection = Connection::new(service_sender, service_receiver);
+        let worker     = Worker::new(client, worker_sender, worker_receiver);
+        
+        let worker_handle = std::thread::spawn(move || Worker::run(worker));
+        _ = worker_handle;
 
-        self.state = match current_state {
-            Zero      => Self::update_state_0(response),
-            One(data) => Self::update_state_1(data, response),
-            Two(data) => Self::update_state_2(data, response),
-        }?;
-
-        Ok(())
+        Ok(connection)
     }
 
-    fn update_state_0(response: Response) -> anyhow::Result<State> {
-        let Response::GetNextEntry(maybe_entry) = response else {
-            return Err(anyhow!("Tag Mismatch"));
-        };  
+    pub fn create_client(config_path: &str) -> anyhow::Result<Client> {
+        let config = ClientConfig::from_file(config_path)
+            .map_err(|e| anyhow!("[Service_p10] Failed to read Config: {:?}", e))?;
 
-        let Some(entry) = maybe_entry else {
-            // no entry found
-            return Ok(State::Zero);
-        };
+        let client = Client::new(config)
+            .map_err(|e| anyhow!("[Service_p10] Failed to create Client: {:?}", e))?;
 
-        let now = Local::now();
-        let start_date = Date { year: now.year(), month: now.month(), day: now.day() };
-        let from_time = Time { hour: now.hour(), minute: now.minute() };
-
-        let data = StateOneData { entry, start_date, from_time };
-
-        Ok(State::One(data))
-    }
-
-    fn update_state_1(data_s1: StateOneData, response: Response) -> anyhow::Result<State> {
-        let Response::GetWorkerSubmission(maybe_workorder_submission) = response else {
-            return Err(anyhow!("Tag Mismatch"));
-        };
-
-        let Some((personnel_id, quantity_scrap)) = maybe_workorder_submission else {
-            // no entry found
-            return Ok(State::One(data_s1));
-        };
-
-        let data_s2 = StateTwoData { state_one_data: data_s1, personnel_id, quantity_scrap };
-        Ok(State::Two(data_s2))
-    }
-
-    fn update_state_2(data_s2: StateTwoData, response: Response) -> anyhow::Result<State> {
-        _ = data_s2;
-
-        let Response::Finalize = response else {
-            return Err(anyhow!("Tag Mismatch"));
-        };
-
-        Ok(State::Zero)
+        Ok(client)
     }
 }

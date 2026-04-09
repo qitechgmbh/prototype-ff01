@@ -1,241 +1,136 @@
-use std::{fs::OpenOptions, net::UdpSocket, time::{Duration, Instant}};
-use std::io::Write;
-
-mod svc;
+use std::{time::{Duration, Instant}};
 
 mod logging;
+use logging::Logger;
 
 mod xtrem;
-use xtrem::*;
+mod scales;
 
 mod service;
+use service::Service;
 
 mod plate_detect_task;
 use plate_detect_task::PlateDetectTask;
 
-use crate::{logging::Logger, service::WorkorderService};
+use crate::scales::Scales;
+
+use std::sync::{Mutex, LazyLock};
+
+static LOGGER: LazyLock<Mutex<Logger>> = LazyLock::new(|| {
+    Mutex::new(Logger::new())
+});
 
 fn main() {
-    let (sock_rx, sock_tx) = setup_sockets(5555, "192.168.4.255:4444");
+    // config
+    let service_config = service::Config {
+        config_path: "/home/qitech/config.json".to_string(),
+        reconnect_attempts_max: 10,
+        timeout_reconnect: Duration::from_millis(2500),
+        timeout_heartbeat: Duration::from_millis(500),
+        timeout_sending:   Duration::from_millis(50),
+    };
 
-    let device_ids = [0x01, 0x02];
-    let cmds: Vec<Vec<u8>> = device_ids
-        .iter()
-        .map(|&id| build_request(id))
-        .collect();
-
-    let mut logger = Logger::new();
-
-    let mut plate_counter: u32 = 0;
-    let mut task = PlateDetectTask::new();
-
-    let request_timeout = Duration::from_millis(2500);    
-    let mut service = WorkorderService::new(request_timeout);
-    service.set_enabled(true);
-
-    let config_path = "/home/qitech/config.json";
-    service.connect(config_path).expect("Connection Failed");
-
-    let mut last = Instant::now();
-
-    let mut service_state: u32 = 0;
-
+    // state
+    let mut plate_count: u32 = 0;
+    let mut last_print_ts = Instant::now();
     let then = Instant::now();
 
+    // components
+    let mut scales  = Scales::new();
+    let mut service = Service::new(service_config);
+    let mut task: Option<PlateDetectTask> = None;
+
+    // init
+    service.set_enabled(true);
+
+    // start
     loop {
+        std::thread::sleep(Duration::from_secs_f64(1.0 / 12.0));
+
+        let mut logger = LOGGER.lock().unwrap();
+
         let now = Instant::now();
 
         let time = now.duration_since(then).as_millis();
 
-        send_requests(&sock_tx, &cmds);
+        scales.update();
 
-        let (weight_0, weight_1) = collect_data(&sock_rx);
-
-        let w0 = opt_to_string(weight_0);
-        let w1 = opt_to_string(weight_1);
-
-        let weight_total = sum_weights(weight_0, weight_1);
-        let wt = opt_to_string(weight_total);
+        let w0 = opt_f64_to_string(scales.weight_0());
+        let w1 = opt_f64_to_string(scales.weight_1());
+        let wt = opt_f64_to_string(scales.weight_total());
 
         // Write to file
         logger.log_scales(&format!("[{}], {}, {}, {}", time, w0, w1, wt));
 
-        if let Some(weight_total) = weight_total {
+        if now.duration_since(last_print_ts) > Duration::from_millis(1000) {
+            let (trigger, peak) = match &task {
+                Some(value) => (value.trigger, value.peak.unwrap_or(0.0)),
+                None => (0.0, 0.0),
+            };
 
-            let weight_total = weight_total - 295.2; // hard coded tare value
+            println!(
+                "Data: {} | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
+                wt, trigger, peak, plate_count, service.state().index()
+            );
 
-            if now.duration_since(last) > Duration::from_millis(1000) {
-                // println!("Service: {:?}  | {:?}", service.client.is_some(), service.state);
-                println!("Data: {} | {:?} -> (plate count: {}) : (service_state_id: {})", weight_total, &task, plate_counter, service_state);
-                last = now;
-            }
-
-            if let Err(e) = service.update_recv() {
-                println!("Error while update_recv: {}", e);
-            }
-
-            if let Some(plate) = task.check(weight_total) {
-
-                if let Some(entry) = service.current_entry() {
-
-                    let in_bounds = 
-                        entry.weight_bounds.min <= weight_total 
-                        && weight_total <= entry.weight_bounds.max;
-
-                    let msg = format!(
-                        "[{}], {}, {}, {}, {}", 
-                        time, 
-                        plate,                         
-                        entry.weight_bounds.min,
-                        entry.weight_bounds.max, 
-                        in_bounds
-                    );
-                    println!("scales: {}", msg);
-                    logger.log_task(&msg);
-
-                    // use newline to easier find plate measurements
-                    logger.log_scales(&format!(""));
-
-                    plate_counter += 1;
-                };              
-            }
-
-            if let Err(e) = service.update_send(Instant::now(), plate_counter) {
-                println!("Error while update_recv: {}", e);
-            }
-
-        } else {
-            plate_counter = 0;
-            task.reset();
+            last_print_ts = now;
         }
 
-        if service_state != service.state.index() {
-            logger.log_service(&format!("[{}], {:?}", time, service.state));
-            service_state = service.state.index();
+        if let Err(e) = service.update(now, plate_count) {
+            println!("Error while updating service: {}", e);
+        }
+        
+        let entry = match service.state() {
+            service::State::Zero => {
+                task        = None;
+                plate_count = 0;
+                logger.set_order(None);
+                continue;
+            },
+            service::State::One(state) => &state.entry,
+            service::State::Two(_) => {
+                task = None;
+                logger.set_order(None);
+                continue;
+            },
+        };
 
-            match &service.state {
-                service::State::Zero => {
-                    logger.log_service(&format!(""));
-                },
-                service::State::One(data) => {
-                    logger.set_order(Some(data.entry.doc_entry));
-                    logger.log_service(&format!("[{}], {:?}", time, data));
-                    task.set_trigger(Some(data.entry.weight_bounds.min));
-                },
-                service::State::Two(data) => {
-                    logger.log_service(&format!("[{}], {:?}", time, data));
-                },
-            }
+        // init task 
+        if task.is_none() {
+            let min     = entry.weight_bounds.min;
+            let trigger = min * 0.8;
+            task = Some(PlateDetectTask::new(trigger));
+
+            logger.set_order(Some(entry.doc_entry));
         }
 
-        std::thread::sleep(Duration::from_secs_f64(1.0 / 12.0));
+        let task = task.as_mut().unwrap();
+
+        let weight_total = scales.weight_total().expect("Scales disconnected!");
+
+        if let Some(plate) = task.check(scales.weight_total().unwrap()) {
+            let in_bounds = 
+                entry.weight_bounds.min <= weight_total 
+                && weight_total <= entry.weight_bounds.max;
+
+            let msg = format!(
+                "[{}], {}, {}, {}, {}", 
+                time, 
+                plate,                         
+                entry.weight_bounds.min,
+                entry.weight_bounds.max, 
+                in_bounds
+            );
+
+            logger.log_task(&msg);
+            plate_count += 1;
+        }
     }
 }
 
-fn sum_weights(weight_0: Option<f64>, weight_1: Option<f64>) -> Option<f64> {
-    Some(weight_0? + weight_1?)
-}
-
-// Helper to format Option<f32>
-fn opt_to_string(v: Option<f64>) -> String {
+fn opt_f64_to_string(v: Option<f64>) -> String {
     match v {
         Some(x) => format!("{:.1}", x),
         None => "_._".to_string(), // or "NaN"
     }
 }
-
-fn setup_sockets(rx_port: u16, tx_addr: &str) -> (UdpSocket, UdpSocket)
-{
-    let sock_rx = UdpSocket::bind(("0.0.0.0", rx_port)).unwrap();
-    let _ = sock_rx.set_nonblocking(true);
-
-    let sock_tx = UdpSocket::bind("0.0.0.0:0").unwrap();
-    sock_tx.set_broadcast(true).unwrap();
-    sock_tx.connect(tx_addr).unwrap();
-
-    (sock_rx, sock_tx)
-}
-
-/// Helper: Build frame for a device ID
-fn build_request(dest_id: u8) -> Vec<u8> {
-    let request = XtremRequest {
-        id_origin: 0x00,
-        id_dest: dest_id,
-        data_address: DataAddress::Weight,
-        function: Function::ReadRequest,
-        data: Vec::new(),
-    };
-    let frame: Frame = request.into();
-    frame.as_bytes()
-}
-
-/// Helper: Send requests
-fn send_requests(sock_tx: &UdpSocket, cmds: &[Vec<u8>]) {
-    for cmd in cmds {
-        sock_tx.send(cmd).unwrap();
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
-
-fn collect_data(sock_rx: &UdpSocket) -> (Option<f64>, Option<f64>)
-{
-    let start = Instant::now();
-    let timeout = Duration::from_millis(100);
-
-    let mut buf = [0u8; 2048];
-
-    let mut weight_0: Option<f64> = None;
-    let mut weight_1: Option<f64> = None;
-
-    while start.elapsed() < timeout {
-        match sock_rx.recv(&mut buf) {
-            Ok(n) => {
-                if let Some((id, weight)) = parse_response(&buf[..n]) {
-                    _ = id;
-                    if weight_0.is_some() {
-                        weight_1 = Some(weight);
-                        break;
-                    } else {
-                        weight_0 = Some(weight);
-                    }
-
-                } else {
-                    println!("Failed to parse response...");
-                }
-            }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                std::thread::sleep(Duration::from_millis(10));
-            }
-            Err(e) => {
-                println!("Err: Socket error: {:?}", e);
-                break;
-            }
-        }
-    }
-    (weight_0, weight_1)
-}
-
-/// Helper: Parse a single response
-fn parse_response(buf: &[u8]) -> Option<(u8, f64)> {
-    let clean: String = buf
-        .iter()
-        .filter(|b| b.is_ascii_graphic() || **b == b' ')
-        .map(|&b| b as char)
-        .collect();
-
-    if clean.len() < 2 {
-        return None;
-    }
-
-    let id_str = &clean[0..2];
-    if let std::result::Result::Ok(id) = id_str.parse::<u8>() {
-        let weight = Frame::parse_weight_from_response(buf);
-        Some((id, weight))
-    } else {
-        println!("Failed to parse ID from '{id_str}'");
-        None
-    }
-}
-
-
-// assumptions: service last -> 

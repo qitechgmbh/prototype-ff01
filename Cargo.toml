@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow     = "1.0.100"
+chrono     = "0.4.0"
+serde      = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+crossbeam  = "0.8.4"
 
-anyhow = "1.0.100"
-
-chrono = "0.4.0"
-
-stahlwerk_extension = { git = "https://github.com/qitechgmbh/stahlwerk-extension.git", rev = "e1e7b41" }
+beas_bsl   = { git = "https://github.com/qitechgmbh/beas-bsl.git", rev = "224ddd3" }
