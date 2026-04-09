@@ -100,6 +100,8 @@ impl Service {
                 return Ok(());
             };
 
+            self.last_heartbeat_ts = now;
+
             match response {
                 Response::NextState(state) => {
                     self.state = state;
