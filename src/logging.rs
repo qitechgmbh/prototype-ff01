@@ -26,7 +26,7 @@ impl Logger {
         let scales_global = OpenOptions::new()
             .create(true)   // create if missing
             .append(true)   // open in append mode
-            .open(format!("/home/qitech/scales_{}", timestamp))
+            .open(format!("/home/qitech/scales_{}.csv", timestamp))
             .expect("Failed to open globa_scales.csv");
 
         Self { entry: None, scales_global }
