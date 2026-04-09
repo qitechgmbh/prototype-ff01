@@ -108,15 +108,16 @@ fn main() {
 
         let weight_total = scales.weight_total().expect("Scales disconnected!");
 
-        if let Some(plate) = task.check(scales.weight_total().unwrap()) {
+        if let Some((plate, drop)) = task.check(scales.weight_total().unwrap()) {
             let in_bounds = 
                 entry.weight_bounds.min <= weight_total 
                 && weight_total <= entry.weight_bounds.max;
 
             let msg = format!(
-                "[{}], {}, {}, {}, {}", 
+                "[{}], {}, {}, {}, {}, {}", 
                 time, 
-                plate,                         
+                plate,
+                drop,                         
                 entry.weight_bounds.min,
                 entry.weight_bounds.max, 
                 in_bounds

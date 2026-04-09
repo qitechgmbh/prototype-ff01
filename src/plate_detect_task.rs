@@ -12,7 +12,7 @@ impl PlateDetectTask {
         }
     }
 
-    pub fn check(&mut self, weight: f64) -> Option<f64> {
+    pub fn check(&mut self, weight: f64) -> Option<(f64, f64)> {
         let trigger = self.trigger;
 
         let Some(current_peak) = self.peak else {
@@ -37,6 +37,6 @@ impl PlateDetectTask {
             return None;
         }
 
-        return self.peak.take();
+        return self.peak.map(|v| (v, drop));
     }
 }
