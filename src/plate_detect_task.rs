@@ -37,6 +37,9 @@ impl PlateDetectTask {
             return None;
         }
 
-        return self.peak.map(|v| (v, drop));
+        self.peak = None;
+        let out = (current_peak, drop);
+        print!("Recording plate: {:?}", out);
+        return Some(out);
     }
 }
