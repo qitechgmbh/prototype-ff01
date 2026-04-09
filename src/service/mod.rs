@@ -66,11 +66,11 @@ impl Service {
         }
 
         let mut connection = if self.connection.is_none() {
-            self.reconnect_attempts += 1;
+            // self.reconnect_attempts += 1;
 
-            if self.reconnect_attempts > self.config.reconnect_attempts_max {
-                panic!("Failed to connect, exceed reconnect_attempts_max!");
-            }
+            // if self.reconnect_attempts > self.config.reconnect_attempts_max {
+            //     panic!("Failed to connect, exceed reconnect_attempts_max!");
+            // }
 
             if self.enabled && now.duration_since(self.last_reconnect_ts) > self.config.timeout_reconnect {
                 self.last_reconnect_ts = now;
