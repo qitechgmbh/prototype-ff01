@@ -2,7 +2,7 @@
 use beas_bsl::{Client, api::{Date, Time, time_receipt}};
 use chrono::{Datelike, Local, Timelike};
 
-use crate::{LOGGER, service::State};
+use crate::{service::State, telemetry::{self, EventMessage, EventType, Message}};
 
 use super::StateOne;
 
@@ -62,9 +62,18 @@ pub fn get_next_state(
         ..Default::default()
     };
 
-    let mut logger = LOGGER.lock().unwrap();
-    logger.log_service(format!("POST REQUEST: {:?}", request).as_str());
-    logger.log_service(format!("State Transition 2 -> 0").as_str());
+    let telemetry = telemetry::HANDLE.wait().clone();
+
+    telemetry.send(Message::Event(EventMessage {
+        event_type: EventType::Info,
+        message: format!("Posting: {:?}", request),
+    })).expect("What the fuck");
+
+    telemetry.send(Message::Event(EventMessage {
+        event_type: EventType::Info,
+        message: format!("State Transition 2 -> 0: {:?}", &state),
+    })).expect("What the fuck");
+    
 
     Ok(State::Zero)
 }

@@ -1,8 +1,6 @@
 use std::{time::{Duration, Instant}};
 
-mod logging;
-use chrono::Date;
-use logging::Logger;
+mod telemetry;
 
 mod xtrem;
 mod scales;
@@ -13,15 +11,14 @@ use service::Service;
 mod plate_detect_task;
 use plate_detect_task::PlateDetectTask;
 
-use crate::scales::Scales;
-
-use std::sync::{Mutex, LazyLock};
-
-static LOGGER: LazyLock<Mutex<Logger>> = LazyLock::new(|| {
-    Mutex::new(Logger::new())
-});
+use crate::{scales::Scales, telemetry::{Message, PlateMessage, WeightMessage}};
 
 fn main() {
+    let handle = telemetry::start();
+    telemetry::HANDLE.set(handle.clone()).ok();
+
+    let telemetry = handle.clone();
+
     // config
     let service_config = service::Config {
         config_path: "/home/qitech/config.json".to_string(),
@@ -34,7 +31,6 @@ fn main() {
     // state
     let mut plate_count: u32 = 0;
     let mut last_print_ts = Instant::now();
-    let then = Instant::now();
 
     // components
     let mut scales  = Scales::new();
@@ -48,20 +44,9 @@ fn main() {
     loop {
         std::thread::sleep(Duration::from_secs_f64(1.0 / 12.0));
 
-        let mut logger = LOGGER.lock().unwrap();
-
         let now = Instant::now();
 
-        let time = now.duration_since(then).as_millis();
-
         scales.update();
-
-        let w0 = opt_f64_to_string(scales.weight_0());
-        let w1 = opt_f64_to_string(scales.weight_1());
-        let wt = opt_f64_to_string(scales.weight_total());
-
-        // Write to file
-        logger.log_scales(&format!("{}, {}, {}, {}", time, w0, w1, wt));
 
         if now.duration_since(last_print_ts) > Duration::from_millis(1000) {
             let (trigger, peak) = match &task {
@@ -70,6 +55,10 @@ fn main() {
             };
 
             let chrono_now = chrono::Local::now();
+
+            let w0 = opt_f64_to_string(scales.weight_0());
+            let w1 = opt_f64_to_string(scales.weight_1());
+            let wt = opt_f64_to_string(scales.weight_total());
 
             println!(
                 "{} :: weight: ({} + {} = {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
@@ -87,16 +76,45 @@ fn main() {
             service::State::Zero => {
                 task        = None;
                 plate_count = 0;
-                logger.set_order(None);
+
+                telemetry.send(Message::Order(None));
+                telemetry.send(Message::Weight(WeightMessage { 
+                    weight_0:       scales.weight_0().unwrap_or(-99.0), 
+                    weight_1:       scales.weight_0().unwrap_or(-99.0), 
+                    weight_total:   scales.weight_0().unwrap_or(-99.0), 
+                    weight_min:     0.0, 
+                    weight_max:     0.0,
+                    weight_desired: 0.0,
+                })).expect("Failed to Send");
+
                 continue;
             },
             service::State::One(state) => &state.entry,
             service::State::Two(_) => {
                 task = None;
-                logger.set_order(None);
+
+                telemetry.send(Message::Order(None));
+                telemetry.send(Message::Weight(WeightMessage { 
+                    weight_0:     scales.weight_0().unwrap_or(-99.0), 
+                    weight_1:     scales.weight_0().unwrap_or(-99.0), 
+                    weight_total: scales.weight_0().unwrap_or(-99.0), 
+                    weight_min:     0.0, 
+                    weight_max:     0.0,
+                    weight_desired: 0.0,
+                })).expect("Failed to Send");
+
                 continue;
             },
         };
+
+        telemetry.send(Message::Weight(WeightMessage { 
+            weight_0:       scales.weight_0().unwrap_or(-99.0), 
+            weight_1:       scales.weight_0().unwrap_or(-99.0), 
+            weight_total:   scales.weight_0().unwrap_or(-99.0), 
+            weight_min:     entry.weight_bounds.min, 
+            weight_max:     entry.weight_bounds.max,
+            weight_desired: entry.weight_bounds.desired,
+        })).expect("Failed to Send");
 
         // init task 
         if task.is_none() {
@@ -104,29 +122,26 @@ fn main() {
             let trigger = min * 0.8;
             task = Some(PlateDetectTask::new(trigger));
 
-            logger.set_order(Some(entry.doc_entry));
+            telemetry.send(Message::Order(Some(entry.doc_entry))).expect("Failed to Send");
         }
 
         let task = task.as_mut().unwrap();
 
         let weight_total = scales.weight_total().expect("Scales disconnected!");
 
-        if let Some((plate, drop)) = task.check(scales.weight_total().unwrap()) {
+        if let Some((peak, drop)) = task.check(weight_total) {
             let in_bounds = 
                 entry.weight_bounds.min <= weight_total 
                 && weight_total <= entry.weight_bounds.max;
 
-            let msg = format!(
-                "{}, {}, {}, {}, {}, {}", 
-                time, 
-                plate,
-                drop,                         
-                entry.weight_bounds.min,
-                entry.weight_bounds.max, 
-                in_bounds
-            );
+            telemetry.send(Message::Plate(PlateMessage {
+                triggger: task.trigger,
+                peak,
+                drop,
+                exit:       weight_total,
+                in_bounds:  if in_bounds { 1 } else { 0 },
+            })).expect("Failed to Send");
 
-            logger.log_task(&msg);
             plate_count += 1;
         }
     }

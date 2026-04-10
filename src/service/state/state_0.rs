@@ -1,3 +1,5 @@
+use std::os::linux::raw::stat;
+
 use anyhow::anyhow;
 use beas_bsl::{
     Client,
@@ -7,7 +9,7 @@ use beas_bsl::{
 };
 use chrono::{Datelike, Local, Timelike};
 
-use crate::{LOGGER, service::types::TargetRange};
+use crate::{service::types::TargetRange, telemetry::{self, EventMessage, EventType, Message}};
 
 use super::super::types::Entry;
 use super::{State, StateOne};
@@ -35,7 +37,11 @@ pub fn get_next_state(client: &Client) -> anyhow::Result<State> {
         from_time,
     };
 
-    LOGGER.lock().unwrap().log_service(format!("State Transition 0 -> 1: {:?}", &state).as_str());
+    let telemetry = telemetry::HANDLE.wait().clone();
+    telemetry.send(Message::Event(EventMessage {
+        event_type: EventType::Info,
+        message: format!("State Transition 0 -> 1: {:?}", &state),
+    })).expect("What the fuck");
 
     Ok(State::One(state))
 }
