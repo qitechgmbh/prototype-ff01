@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{collections::{HashMap, HashSet}, time::Instant};
 
 use anyhow::anyhow;
 use beas_bsl::{Client, ClientConfig};
@@ -26,6 +26,9 @@ pub struct Service {
     last_reconnect_ts: Instant,
     last_send_ts:      Instant,
     connection: Option<Connection>,
+
+    // completed
+    completed_orders: HashSet<i32>
 }
 
 // public interface
@@ -42,6 +45,7 @@ impl Service {
             last_reconnect_ts: now,
             last_send_ts:      now,
             connection: None,
+            completed_orders: Default::default()
         }
     }
 
@@ -104,6 +108,16 @@ impl Service {
 
             match response {
                 Response::NextState(state) => {
+                    if let State::One(data) = &state {
+                        if self.completed_orders.contains(&data.entry.doc_entry) {
+                            return Ok(());
+                        }
+                    }
+
+                    if let State::Two(data) = &state {
+                        self.completed_orders.insert(data.state_one.entry.doc_entry);
+                    }
+
                     self.state = state;
                 },
                 Response::Error(error) => {
