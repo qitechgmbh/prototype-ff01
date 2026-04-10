@@ -74,9 +74,13 @@ impl Connection {
         if !self.pending { panic!("Not allowed") }
 
         let result = self.receiver.try_recv();
-        self.pending = false;
+
         match result {
-            Ok(response) => return Some(response),
+            Ok(response) => {
+                // wait for response before allowing new requests
+                self.pending = false;
+                return Some(response);
+            }
             Err(TryRecvError::Empty) => return None,
             Err(TryRecvError::Disconnected) => {
                 panic!("Worker disconnected but isn't supposed to!");
@@ -96,6 +100,8 @@ impl Connection {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.sender.try_send(Request::Terminate).expect("Channel must be available");
+        if let Err(e) = self.sender.try_send(Request::Terminate) {
+            println!("CRITICAL ERROR WHILE DROPPING CONNECIION: {}", e);
+        }
     }
 }
