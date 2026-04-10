@@ -120,7 +120,7 @@ fn execute_worker(
         match msg_any {
             Message::Weight(data) => {
                 let out = format!(
-                    "{}, {}, {}, {}, {}, {}, {}, {}", 
+                    "{}, {}, {}, {}, {}, {}, {}, {}\n", 
                     date, 
                     time, 
                     data.weight_0,
@@ -137,7 +137,7 @@ fn execute_worker(
             },
             Message::Plate(data) => {
                 let out = format!(
-                    "{}, {}, {}, {}, {}, {}, {}", 
+                    "{}, {}, {}, {}, {}, {}, {}\n", 
                     date, 
                     time, 
                     data.triggger,
@@ -153,7 +153,7 @@ fn execute_worker(
             },
             Message::Event(data) => {
                 let out = format!(
-                    "{}, {}, {}, {}", 
+                    "{}, {}, {}, {}\n", 
                     date, 
                     time, 
                     data.event_type,
