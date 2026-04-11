@@ -69,6 +69,8 @@ fn main() {
         }
 
         if let Err(e) = service.update(now, plate_count) {
+
+            telemetry.send(Message::Event(telemetry::EventMessage { event_type: telemetry::EventType::Error, message: format!("Error in response: {}", e) })).expect("Oh no no send can me");
             println!("Error while updating service: {}", e);
         }
         
@@ -77,7 +79,7 @@ fn main() {
                 task        = None;
                 plate_count = 0;
 
-                telemetry.send(Message::Order(None));
+                telemetry.send(Message::Order(None)).expect("Oh no no no");
                 telemetry.send(Message::Weight(WeightMessage { 
                     weight_0:       scales.weight_0().unwrap_or(-99.0), 
                     weight_1:       scales.weight_0().unwrap_or(-99.0), 
