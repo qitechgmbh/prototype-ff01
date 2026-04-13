@@ -14,6 +14,8 @@ pub use types::Config;
 mod worker;
 use worker::Worker;
 
+use crate::telemetry::{self, LogLevel};
+
 #[derive(Debug)]
 pub struct Service {
     config: Config,
@@ -21,6 +23,7 @@ pub struct Service {
     // state
     enabled: bool,
     state: State,
+    state_mutation_counter: u64,
     reconnect_attempts: u32,
     last_heartbeat_ts: Instant,
     last_reconnect_ts: Instant,
@@ -40,6 +43,7 @@ impl Service {
             config,
             enabled: false, 
             state: State::Zero,
+            state_mutation_counter: 0,
             reconnect_attempts: 0,
             last_heartbeat_ts: now,
             last_reconnect_ts: now,
@@ -62,14 +66,22 @@ impl Service {
         &self.state
     }
 
-    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<()> {
+    fn set_state(&mut self, state: State) {
+        if self.state.index() == state.index() {
+            return;
+        }
+
+        
+    }
+
+    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<bool> {
         if !self.enabled {
             self.state = State::Zero;
             self.connection = None;
-            return Ok(());
+            return Ok(false);
         }
 
-        let mut connection = if self.connection.is_none() {
+        let connection = if self.connection.is_none() {
             // self.reconnect_attempts += 1;
 
             // if self.reconnect_attempts > self.config.reconnect_attempts_max {
@@ -83,7 +95,7 @@ impl Service {
                 self.connection = Some(connection);
                 self.state = State::Zero;
             } else {
-                return Ok(());
+                return Ok(false);
             }
             
             self.reconnect_attempts = 0;
@@ -96,12 +108,16 @@ impl Service {
         if connection.has_pending() {
             let Some(response) = connection.recv() else {
                 if now.duration_since(self.last_heartbeat_ts) > self.config.timeout_heartbeat {
-                    println!("Event: Heartbeat timed out, dropping connection");
+                    telemetry::log(
+                        LogLevel::Warn, 
+                        format!("Event: Heartbeat timed out, dropping connection")
+                    );
+
                     self.state = State::Zero;
                     self.connection = None;
                 }
 
-                return Ok(());
+                return Ok(false);
             };
 
             self.last_heartbeat_ts = now;
@@ -110,7 +126,7 @@ impl Service {
                 Response::NextState(state) => {
                     if let State::One(data) = &state {
                         if self.completed_orders.contains(&data.entry.doc_entry) {
-                            return Ok(());
+                            return Ok(false);
                         }
                     }
 
@@ -126,14 +142,14 @@ impl Service {
             }
         } else {
             if now.duration_since(self.last_send_ts) < self.config.timeout_sending {
-                return Ok(());
+                return Ok(true);
             }
 
             connection.send(self.state.clone(), plate_count);
             self.last_send_ts = now;
         }
 
-        return Ok(());
+        return Ok(false);
     }
 }
 

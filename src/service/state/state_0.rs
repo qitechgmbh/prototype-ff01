@@ -9,7 +9,7 @@ use beas_bsl::{
 };
 use chrono::{Datelike, Local, Timelike};
 
-use crate::{service::types::TargetRange, telemetry::{self, EventMessage, EventType, Message}};
+use crate::{service::types::TargetRange, telemetry::{self, LogLevel}};
 
 use super::super::types::Entry;
 use super::{State, StateOne};
@@ -37,11 +37,7 @@ pub fn get_next_state(client: &Client) -> anyhow::Result<State> {
         from_time,
     };
 
-    let telemetry = telemetry::HANDLE.wait().clone();
-    telemetry.send(Message::Event(EventMessage {
-        event_type: EventType::Info,
-        message: format!("State Transition 0 -> 1: {:?}", &state),
-    })).expect("What the fuck");
+    telemetry::log(LogLevel::Info, format!("State Transition 0 -> 1: {:?}", &state));
 
     Ok(State::One(state))
 }

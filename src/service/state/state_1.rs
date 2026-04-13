@@ -4,7 +4,7 @@ use beas_bsl::{
     api::{ Date, FilterBuilder, QueryOptions, Time, TimeReceipt },
 };
 
-use crate::{service::StateTwo, telemetry::{self, EventMessage, EventType, Message}};
+use crate::{service::StateTwo, telemetry::{self, LogLevel}};
 
 use super::super::types::Entry;
 use super::State;
@@ -30,12 +30,8 @@ pub fn get_next_state(client: &Client, state: StateOne) -> anyhow::Result<State>
 
     let state = StateTwo { state_one: state, personnel_id, quantity_scrap };
 
-    let telemetry = telemetry::HANDLE.wait().clone();
-    telemetry.send(Message::Event(EventMessage {
-        event_type: EventType::Info,
-        message: format!("State Transition 1 -> 2: {:?}", &state),
-    })).expect("What the fuck");
-    
+    telemetry::log(LogLevel::Info, format!("State Transition 1 -> 2: {:?}", &state));
+
     Ok(State::Two(state))
 }
 

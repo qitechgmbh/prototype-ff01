@@ -3,16 +3,16 @@ use std::io::Write;
 
 use chrono::{self, Local};
 
-pub static HANDLE: OnceLock<crossbeam::channel::Sender<Message>> = OnceLock::new();
+pub static HANDLE: OnceLock<crossbeam::channel::Sender<Entry>> = OnceLock::new();
 
-pub enum Message {
-    Weight(WeightMessage),
-    Plate(PlateMessage),
-    Event(EventMessage),
+pub enum Entry {
+    Weight(WeightEntry),
+    Plate(PlateEntry),
+    Event(EventEntry),
     Order(Option<i32>),
 }
 
-pub struct WeightMessage {
+pub struct WeightEntry {
     pub weight_0:       f64,
     pub weight_1:       f64,
     pub weight_total:   f64,
@@ -21,7 +21,7 @@ pub struct WeightMessage {
     pub weight_desired: f64,
 }
 
-pub struct PlateMessage {
+pub struct PlateEntry {
     pub triggger:   f64,
     pub peak:       f64,
     pub drop:       f64,
@@ -29,7 +29,15 @@ pub struct PlateMessage {
     pub in_bounds:  u32,
 }
 
-pub struct EventMessage {
+pub struct OrderEntry {
+    pub id:             i32,
+    pub status:         f64,
+    pub weight_min:     f64,
+    pub weight_max:     f64,
+    pub weight_desired: f64,
+}
+
+pub struct EventEntry {
     pub event_type: EventType,
     pub message:    String,
 }
@@ -55,13 +63,13 @@ pub struct Logger {
     order:  Option<(i32, Entry)>,
 }
 
-pub struct Entry {
+pub struct MeasurementEntry {
     weights: File,
     plates:  File,
     events:  File,
 }
 
-pub fn start() -> crossbeam::channel::Sender<Message> {
+pub fn start() -> crossbeam::channel::Sender<Entry> {
     let (tx, rx) = crossbeam::channel::unbounded();
 
     let now = SystemTime::now()
@@ -107,7 +115,7 @@ fn open_file(path: PathBuf) -> File {
 
 fn execute_worker(
     mut logger: Logger,
-    rx_msg: crossbeam::channel::Receiver<Message>,
+    rx_msg: crossbeam::channel::Receiver<Entry>,
 ) {
     loop {
         let msg_any = rx_msg.recv().expect("Channels should exit for the lifetime of the program");
@@ -118,7 +126,7 @@ fn execute_worker(
         let time = now.format("%H:%M:%S").to_string();
 
         match msg_any {
-            Message::Weight(data) => {
+            Entry::Weight(data) => {
                 let out = format!(
                     "{}, {}, {}, {}, {}, {}, {}, {}\n", 
                     date, 
@@ -135,7 +143,7 @@ fn execute_worker(
                     order.1.weights.write(out.as_bytes()).expect("Failed to write");
                 }
             },
-            Message::Plate(data) => {
+            Entry::Plate(data) => {
                 let out = format!(
                     "{}, {}, {}, {}, {}, {}, {}\n", 
                     date, 
@@ -151,7 +159,7 @@ fn execute_worker(
                     order.1.plates.write(out.as_bytes()).expect("Failed to write");
                 }
             },
-            Message::Event(data) => {
+            Entry::Event(data) => {
                 let out = format!(
                     "{}, {}, {}, {}\n", 
                     date, 
@@ -164,7 +172,7 @@ fn execute_worker(
                     order.1.events.write(out.as_bytes()).expect("Failed to write");
                 }
             },
-            Message::Order(order_id) => {
+            Entry::Order(order_id) => {
                 match order_id {
                     Some(id) => {
                         if let Some(order) = &logger.order {
