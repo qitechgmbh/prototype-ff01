@@ -34,7 +34,10 @@ pub fn log(level: LogLevel, message: String) {
 pub fn init() {
     let (tx, rx) = crossbeam::channel::unbounded();
 
-    let files = Files::new(&format!("{}", get_timestamp()));
+    let now = chrono::Local::now();
+    let sub_path = now.format("%Y-%m-%d_%H-%M-%S%.6f");
+
+    let files = Files::new(&format!("{}", sub_path));
 
     std::thread::spawn(move || {
         execute_worker(files, rx);
@@ -53,9 +56,9 @@ fn execute_worker(
         let record = rx_record.recv().expect("Channels should exit for the lifetime of the program");
 
         match record {
-            Record::Weight(record) => write_weight(&mut files.weights, record),
-            Record::Plate(record)  => write_plate(&mut files.plates, record),
-            Record::Log(level, msg)    => write_log(&mut files.logs, level, msg),
+            Record::Weight(record)  => write_weight(&mut files.weights, record),
+            Record::Plate(record)   => write_plate(&mut files.plates, record),
+            Record::Log(level, msg) => write_log(&mut files.logs, level, msg),
             Record::Order(record) => {
                 match record {
                     Some(order) => {
