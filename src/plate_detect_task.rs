@@ -39,7 +39,6 @@ impl PlateDetectTask {
 
         self.peak = None;
         let out = (current_peak, drop);
-        print!("Recording plate: {:?}", out);
         return Some(out);
     }
 }

@@ -27,7 +27,6 @@ pub fn record_order(record: Option<OrderRecord>) {
 
 pub fn log(level: LogLevel, message: String) {
     let handle = HANDLE.get().expect("Failed to retrieve handle");
-    println!("{}", &message);
     handle.send(Record::Log(level, message)).expect("Why channel full??");
 }
 
