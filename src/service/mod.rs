@@ -127,7 +127,7 @@ impl Service {
                         format!("Heartbeat timed out, dropping connection")
                     );
 
-                    self.state = State::Zero;
+                    self.set_state(State::Zero);
                     self.connection = None;
                 }
 
@@ -148,7 +148,7 @@ impl Service {
                         self.completed_orders.insert(data.state_one.entry.doc_entry);
                     }
 
-                    self.state = state;
+                    self.set_state(state);
                 },
                 Response::Error(error) => {
                     return Err(anyhow!("Error in response: {:?}", error));
