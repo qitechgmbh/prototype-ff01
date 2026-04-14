@@ -145,9 +145,15 @@ impl App {
         let w1 = opt_f64_to_string(self.scales.weight_1());
         let wt = opt_f64_to_string(self.scales.weight_total());
 
+        let entry_id: i32 = match self.service.state() {
+            State::Zero => 0,
+            State::One(state) => state.entry.doc_entry,
+            State::Two(state) => state.state_one.entry.doc_entry,
+        };
+
         println!(
-            "{} :: weight: ({} + {} = {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
-            chrono_now, w0, w1, wt, trigger, peak, self.plate_count, self.service.state().index()
+            "{} :: weight: ({} + {} = {}) | (task: {} | {}) : (plates: {}) : (ss_id: {}, order_id: {})", 
+            chrono_now, w0, w1, wt, trigger, peak, self.plate_count, self.service.state().index(), entry_id
         );
     }
 }
