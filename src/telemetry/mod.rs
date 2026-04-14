@@ -35,7 +35,7 @@ pub fn init() {
     let (tx, rx) = crossbeam::channel::unbounded();
 
     let now = chrono::Local::now();
-    let sub_path = now.format("%Y-%m-%d_%H-%M-%S%.6f");
+    let sub_path = now.format("%Y%m%d%H%M%S%");
 
     let files = Files::new(&format!("{}", sub_path));
 
