@@ -88,6 +88,8 @@ impl App {
         self.service_state_mutation_counter = self.service.state_mutation_counter();
         
         if state_modified {
+            println!("State modified!");
+
             self.task = None;
 
             if let State::One(state) = self.service.state() {
