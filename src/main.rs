@@ -11,7 +11,17 @@ use service::Service;
 mod plate_detect_task;
 use plate_detect_task::PlateDetectTask;
 
-use crate::{scales::Scales, service::{State, StateOne}, telemetry::{LogLevel, OrderRecord, PlateRecord, Record, WeightEntry, WeightRecord}};
+use crate::{
+    scales::Scales, 
+    service::State
+};
+
+use crate::telemetry::{
+    LogLevel, 
+    OrderRecord, 
+    PlateRecord, 
+    WeightRecord
+};
 
 pub struct App {
     // state
@@ -56,7 +66,6 @@ impl App {
                 weight_0:     w0,
                 weight_1:     w1,
                 weight_total: wt,
-                order_id:     0,
             });
             return;
         }
@@ -100,29 +109,18 @@ impl App {
             return;
         };
 
-        let task = self.task.as_mut().unwrap();
+        let entry = &state.entry;
+        let task  = self.task.as_mut().expect("Initialized when entering state");
 
-        if let Some((peak, drop)) = task.check(weight_total) {
-            let exit = weight_total;
-            let in_bounds = 
-                entry.weight_bounds.min <= weight_total 
-                && weight_total <= entry.weight_bounds.max;
+        if let Some((peak, drop)) = task.check(wt) {
+            let bounds = &entry.weight_bounds;
 
-            telemetry::record_weight(PlateRecord { peak, drop, exit, in_bounds });
+            let exit = wt;
+            let in_bounds = bounds.min <= wt && wt <= bounds.max;
 
-            plate_count += 1;
-        }
-    }
+            telemetry::record_plate(PlateRecord { peak, drop, exit, in_bounds });
 
-    fn handle_state_one(&mut self, state: StateOne) {
-        let entry = state.entry;
-
-        // init task 
-        if self.task.is_none() {
-            let min     = entry.weight_bounds.min;
-            let trigger = min * 0.8;
-            self.task = Some(PlateDetectTask::new(trigger));
-            telemetry.send(Entry::Order(Some(entry.doc_entry))).expect("Failed to Send");
+            self.plate_count += 1;
         }
     }
 
@@ -161,7 +159,7 @@ fn main() {
         timeout_sending:   Duration::from_millis(100),
     };
 
-    let app = App {
+    let mut app = App {
         plate_count:   0,
         last_print_ts: Instant::now(),
         scales:        Scales::new(),
@@ -171,105 +169,15 @@ fn main() {
 
     app.service.set_enabled(true);
 
+    let update_freq = 1.0 / 12.0;
+
     // start
     loop {
-        std::thread::sleep(Duration::from_secs_f64(1.0 / 12.0));
-
         let now = Instant::now();
+        app.update(now);
 
-        scales.update();
-
-        if now.duration_since(last_print_ts) > Duration::from_millis(1000) {
-            let (trigger, peak) = match &task {
-                Some(value) => (value.trigger, value.peak.unwrap_or(0.0)),
-                None => (0.0, 0.0),
-            };
-
-            let chrono_now = chrono::Local::now();
-
-            let w0 = opt_f64_to_string(scales.weight_0());
-            let w1 = opt_f64_to_string(scales.weight_1());
-            let wt = opt_f64_to_string(scales.weight_total());
-
-            println!(
-                "{} :: weight: ({} + {} = {}) | (task: {} | {}) : (plates: {}) : (ss_id: {})", 
-                chrono_now, w0, w1, wt, trigger, peak, plate_count, service.state().index()
-            );
-
-            last_print_ts = now;
-        }
-
-        let state_modified = match service.update(now, plate_count) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Error while updating service: {}", e);
-                println!("{}", msg);
-                telemetry::log(LogLevel::Error, msg);
-                continue;
-            },
-        };
-
-        let entry = match service.state() {
-            State::One(state) => &state.entry,
-            State::Zero | State::Two(_) => {
-                task = None;
-                if service.state().index() == 0 {
-                    plate_count = 0;
-                }
-                
-                telemetry::record_weight(WeightRecord {
-                    weight_0:     scales.weight_0().unwrap_or(-123.546789),
-                    weight_1:     scales.weight_1().unwrap_or(-123.546789),
-                    weight_total: scales.weight_total().unwrap_or(-123.546789),
-                    order_id: 0,
-                });
-
-                continue;
-            }
-        };
-
-        assert!(task.is_none());
-        // entered state one
-        let min     = entry.weight_bounds.min;
-        let trigger = min * 0.8;
-        task = Some(PlateDetectTask::new(trigger));
-
-        telemetry::record_order(Some(OrderRecord {
-            id: entry.doc_entry,
-            weight_min: entry.weight_bounds.min,
-            weight_max: entry.weight_bounds.max,
-            weight_desired: entry.weight_bounds.desired,
-            weight_trigger: entry.weight_bounds.min * 0.8,
-        }));
-
-        // init task 
-        if task.is_none() {
-            let min     = entry.weight_bounds.min;
-            let trigger = min * 0.8;
-            task = Some(PlateDetectTask::new(trigger));
-
-            telemetry.send(Entry::Order(Some(entry.doc_entry))).expect("Failed to Send");
-        }
-
-        let task = task.as_mut().unwrap();
-
-        let weight_total = scales.weight_total().expect("Scales disconnected!");
-
-        if let Some((peak, drop)) = task.check(weight_total) {
-            let exit = weight_total;
-            let in_bounds = 
-                entry.weight_bounds.min <= weight_total 
-                && weight_total <= entry.weight_bounds.max;
-
-            telemetry::record_weight(PlateRecord { peak, drop, exit, in_bounds });
-
-            plate_count += 1;
-        }
+        std::thread::sleep(Duration::from_secs_f64(update_freq));
     }
-}
-
-fn handle_state_one(state: StateOne) {
-    if 
 }
 
 fn opt_f64_to_string(v: Option<f64>) -> String {

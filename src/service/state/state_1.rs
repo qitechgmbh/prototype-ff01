@@ -4,7 +4,7 @@ use beas_bsl::{
     api::{ Date, FilterBuilder, QueryOptions, Time, TimeReceipt },
 };
 
-use crate::{service::StateTwo, telemetry::{self, LogLevel}};
+use crate::{service::state::StateTwo, telemetry::{self, LogLevel}};
 
 use super::super::types::Entry;
 use super::State;

@@ -2,7 +2,7 @@
 use beas_bsl::{Client, api::{Date, Time, time_receipt}};
 use chrono::{Datelike, Local, Timelike};
 
-use crate::{service::types::TargetRange, telemetry::{self, LogLevel}};
+use crate::{service::State, telemetry::{self, LogLevel}};
 
 use super::StateOne;
 
@@ -62,18 +62,8 @@ pub fn get_next_state(
         ..Default::default()
     };
 
-    let telemetry = telemetry::HANDLE.wait().clone();
-
-    telemetry.send(Entry::Event(EventEntry {
-        event_type: EventType::Info,
-        message: format!("Posting: {:?}", request),
-    })).expect("What the fuck");
-
-    telemetry.send(Entry::Event(EventEntry {
-        event_type: EventType::Info,
-        message: format!("State Transition 2 -> 0: {:?}", &state),
-    })).expect("What the fuck");
-    
+    telemetry::log(LogLevel::Info, format!("Posting TimeReceipt: {:?}", &request));
+    telemetry::log(LogLevel::Info, format!("State Transition 2 -> 0"));
 
     Ok(State::Zero)
 }

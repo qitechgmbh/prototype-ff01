@@ -10,11 +10,6 @@ pub use types::LogLevel;
 
 static HANDLE: OnceLock<crossbeam::channel::Sender<Record>> = OnceLock::new();
 
-pub fn submit(record: Record) {
-    let handle = HANDLE.get().expect("Failed to retrieve handle");
-    handle.send(record).expect("Why channel full??");
-}
-
 pub fn record_weight(record: WeightRecord) {
     let handle = HANDLE.get().expect("Failed to retrieve handle");
     handle.send(Record::Weight(record)).expect("Why channel full??");

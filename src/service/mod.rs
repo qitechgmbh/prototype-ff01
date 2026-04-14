@@ -1,11 +1,11 @@
-use std::{collections::{HashMap, HashSet}, time::Instant};
+use std::{collections::HashSet, time::Instant};
 
 use anyhow::anyhow;
 use beas_bsl::{Client, ClientConfig};
 
 mod state;
 use crossbeam::channel::bounded;
-pub use state::{State, StateOne, StateTwo};
+pub use state::State;
 
 mod types;
 use types::{Request, Response, Connection};
@@ -24,7 +24,7 @@ pub struct Service {
     enabled: bool,
     state: State,
     state_mutation_counter: u64,
-    reconnect_attempts: u32,
+    // reconnect_attempts: u32,
     last_heartbeat_ts: Instant,
     last_reconnect_ts: Instant,
     last_send_ts:      Instant,
@@ -44,7 +44,7 @@ impl Service {
             enabled: false, 
             state: State::Zero,
             state_mutation_counter: 0,
-            reconnect_attempts: 0,
+            // reconnect_attempts: 0,
             last_heartbeat_ts: now,
             last_reconnect_ts: now,
             last_send_ts:      now,
@@ -66,51 +66,65 @@ impl Service {
         &self.state
     }
 
+    pub fn state_mutation_counter(&self) -> u64 {
+        self.state_mutation_counter
+    }
+
     fn set_state(&mut self, state: State) {
         if self.state.index() == state.index() {
             return;
         }
 
-        
+        self.state_mutation_counter += 1;
+        self.state = state;
+    }
+
+    fn get_or_create_connection(&mut self, now: Instant) -> anyhow::Result<Option<Connection>> {
+        if self.connection.is_some() {
+            return Ok(self.connection.take());
+        }
+
+        if self.enabled && now.duration_since(self.last_reconnect_ts) < self.config.timeout_reconnect {
+            return Ok(None);
+        }
+
+        self.last_reconnect_ts = now;
+
+        telemetry::log(
+            LogLevel::Info, 
+            format!("Establishing connection to Beas-Bsl...")
+        );
+
+        let connection = Self::create_connection(&self.config.config_path)?;
+
+        telemetry::log(
+            LogLevel::Info, 
+            format!("Successfully established connection to Beas-Bsl")
+        );
+
+        self.set_state(State::Zero);
+        Ok(Some(connection))
     }
 
     pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<bool> {
         if !self.enabled {
-            self.state = State::Zero;
+            self.set_state(State::Zero);
             self.connection = None;
             return Ok(false);
         }
 
-        let connection = if self.connection.is_none() {
-            // self.reconnect_attempts += 1;
+        self.connection = self.get_or_create_connection(now)?;
 
-            // if self.reconnect_attempts > self.config.reconnect_attempts_max {
-            //     panic!("Failed to connect, exceed reconnect_attempts_max!");
-            // }
-
-            if self.enabled && now.duration_since(self.last_reconnect_ts) > self.config.timeout_reconnect {
-                self.last_reconnect_ts = now;
-                println!("Event: Establishing connection");
-                let connection = Self::create_connection(&self.config.config_path)?;
-                self.connection = Some(connection);
-                self.state = State::Zero;
-            } else {
-                return Ok(false);
-            }
-            
-            self.reconnect_attempts = 0;
-            self.last_heartbeat_ts  = now;
-            self.connection.as_mut().unwrap()
-        } else {
-            self.connection.as_mut().unwrap()
+        let Some(connection) = self.connection.as_mut() else {
+            return Ok(false);
         };
-
+        
         if connection.has_pending() {
             let Some(response) = connection.recv() else {
                 if now.duration_since(self.last_heartbeat_ts) > self.config.timeout_heartbeat {
                     telemetry::log(
                         LogLevel::Warn, 
-                        format!("Event: Heartbeat timed out, dropping connection")
+                        format!("Heartbeat timed out, dropping connection")
                     );
 
                     self.state = State::Zero;

@@ -11,7 +11,6 @@ pub struct WeightRecord {
     pub weight_0:     f64,
     pub weight_1:     f64,
     pub weight_total: f64,
-    pub order_id:     i32,
 }
 
 pub struct PlateRecord {
