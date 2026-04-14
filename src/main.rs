@@ -46,7 +46,7 @@ impl App {
             self.last_print_ts = now;   
         }
 
-        let (w0, w1, wt, complete) = {
+        let (w0, w1, wt) = {
             let mut complete: bool = true;
             if self.scales.weight_0().is_none() {
                 telemetry::log(LogLevel::Error, format!("Weight 0 is None!"));
@@ -60,18 +60,20 @@ impl App {
 
             let w0 = self.scales.weight_0().unwrap_or(NAN);
             let w1 = self.scales.weight_1().unwrap_or(NAN);
+            let wt = w0 + w1;
 
-            (w0, w1, w0 + w1, complete)
-        };
-
-        if !complete {
             telemetry::record_weight(WeightRecord {
                 weight_0:     w0,
                 weight_1:     w1,
                 weight_total: wt,
             });
-            return;
-        }
+
+            if !complete {
+                return;
+            }
+
+            (w0, w1, wt)
+        };
 
         if let Err(e) = self.service.update(now, self.plate_count) {
             let msg = format!("Error while updating service: {}", e);
