@@ -88,7 +88,7 @@ impl App {
         self.service_state_mutation_counter = self.service.state_mutation_counter();
         
         if state_modified {
-            println!("State modified!");
+            println!("State modified!: {}", self.service.state_mutation_counter());
 
             self.task = None;
 
