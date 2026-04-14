@@ -46,7 +46,7 @@ impl App {
             self.last_print_ts = now;   
         }
 
-        let (w0, w1, wt) = {
+        let wt = {
             let mut complete: bool = true;
             if self.scales.weight_0().is_none() {
                 telemetry::log(LogLevel::Error, format!("Weight 0 is None!"));
@@ -72,7 +72,7 @@ impl App {
                 return;
             }
 
-            (w0, w1, wt)
+            wt
         };
 
         if let Err(e) = self.service.update(now, self.plate_count) {
