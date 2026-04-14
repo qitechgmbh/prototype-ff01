@@ -32,6 +32,9 @@ pub struct App {
     pub scales:  Scales,
     pub service: Service,
     pub task:    Option<PlateDetectTask>,
+
+    // thing
+    service_state_mutation_counter: u64,
 }
 
 impl App {
@@ -70,16 +73,18 @@ impl App {
             return;
         }
 
-        let state_modified = match self.service.update(now, self.plate_count) {
-            Ok(v) => v,
-            Err(e) => {
-                let msg = format!("Error while updating service: {}", e);
-                println!("{}", msg);
-                telemetry::log(LogLevel::Error, msg);
-                return;
-            },
-        };
+        if let Err(e) = self.service.update(now, self.plate_count) {
+            let msg = format!("Error while updating service: {}", e);
+            println!("{}", msg);
+            telemetry::log(LogLevel::Error, msg);
+            return;
+        }
 
+        let state_modified = 
+            self.service_state_mutation_counter == self.service.state_mutation_counter();
+        
+        self.service_state_mutation_counter = self.service.state_mutation_counter();
+        
         if state_modified {
             self.task = None;
 
@@ -165,6 +170,7 @@ fn main() {
         scales:        Scales::new(),
         service:       Service::new(config),
         task:          None,
+        service_state_mutation_counter: 0,
     };
 
     app.service.set_enabled(true);

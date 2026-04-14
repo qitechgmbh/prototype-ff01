@@ -106,17 +106,17 @@ impl Service {
         Ok(Some(connection))
     }
 
-    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<bool> {
+    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<()> {
         if !self.enabled {
             self.set_state(State::Zero);
             self.connection = None;
-            return Ok(false);
+            return Ok(());
         }
 
         self.connection = self.get_or_create_connection(now)?;
 
         let Some(connection) = self.connection.as_mut() else {
-            return Ok(false);
+            return Ok(());
         };
         
         if connection.has_pending() {
@@ -131,7 +131,7 @@ impl Service {
                     self.connection = None;
                 }
 
-                return Ok(false);
+                return Ok(());
             };
 
             self.last_heartbeat_ts = now;
@@ -140,7 +140,7 @@ impl Service {
                 Response::NextState(state) => {
                     if let State::One(data) = &state {
                         if self.completed_orders.contains(&data.entry.doc_entry) {
-                            return Ok(false);
+                            return Ok(());
                         }
                     }
 
@@ -156,14 +156,14 @@ impl Service {
             }
         } else {
             if now.duration_since(self.last_send_ts) < self.config.timeout_sending {
-                return Ok(true);
+                return Ok(());
             }
 
             connection.send(self.state.clone(), plate_count);
             self.last_send_ts = now;
         }
 
-        return Ok(false);
+        return Ok(());
     }
 }
 
