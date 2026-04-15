@@ -1,0 +1,1 @@
+python ./chart/main.py "$@"
