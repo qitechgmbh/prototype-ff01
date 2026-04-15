@@ -145,8 +145,6 @@ impl App {
             State::Two(state) => state.state_one.entry.doc_entry,
         };
 
-        println!("WEIGHT: [w0: {:.1}, w1: {:.1}, wt: {:.1}]", w0, w1, wt);
-
         println!(
             "{} :: scales: [w0: {:.1}, w1: {:.1}, wt: {:.1}] | task: [trigger: {:.1},  peak: {:.1}, count: {}] | service: [state_id: {}, order_id: {}]", 
             chrono_now, w0, w1, wt, trigger, peak, self.plate_count, self.service.state().index(), entry_id
@@ -184,12 +182,5 @@ fn main() {
         app.update(now);
 
         std::thread::sleep(Duration::from_secs_f64(update_freq));
-    }
-}
-
-fn opt_f64_to_string(v: Option<f64>) -> String {
-    match v {
-        Some(x) => format!("{:.1}", x),
-        None => "_._".to_string(), // or "NaN"
     }
 }
