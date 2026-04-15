@@ -135,9 +135,9 @@ impl App {
 
         let chrono_now = chrono::Local::now();
 
-        let w0 = opt_f64_to_string(self.scales.weight_0());
-        let w1 = opt_f64_to_string(self.scales.weight_1());
-        let wt = opt_f64_to_string(self.scales.weight_total());
+        let w0 = self.scales.weight_0().unwrap_or(NAN);
+        let w1 = self.scales.weight_1().unwrap_or(NAN);
+        let wt = self.scales.weight_total().unwrap_or(NAN);
 
         let entry_id: i32 = match self.service.state() {
             State::Zero => 0,
