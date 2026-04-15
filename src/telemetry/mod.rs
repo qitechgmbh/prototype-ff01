@@ -56,9 +56,8 @@ pub fn record_state(record: ServiceStateRecord) {
 
 pub fn record_bounds(record: WeightBoundsRecord) {
     let data = format!(
-        "{}, {}, {:.1}, {:.1}, {:.1}, {:.1}\n", 
+        "{}, {:.1}, {:.1}, {:.1}, {:.1}\n", 
         get_timestamp(), 
-        record.order_id,
         record.min,
         record.max,
         record.desired,
@@ -151,5 +150,5 @@ fn execute_worker(mut files: Files,rx_record: Receiver<Payload>) {
 
 fn get_timestamp() -> String {
     let now = chrono::Local::now();
-    now.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
+    now.format("%Y-%m-%dT%H:%M:%S%.6f").to_string()
 }

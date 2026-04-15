@@ -30,7 +30,6 @@ pub struct ServiceStateRecord {
 }
 
 pub struct WeightBoundsRecord {
-    pub order_id: i32,
     pub min:      f64,
     pub max:      f64,
     pub desired:  f64,

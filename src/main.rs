@@ -95,11 +95,10 @@ impl App {
 
                 // record order
                 telemetry::record_bounds(WeightBoundsRecord {
-                    order_id: entry.doc_entry,
-                    min:      entry.weight_bounds.min,
-                    max:      entry.weight_bounds.max,
-                    desired:  entry.weight_bounds.desired,
-                    trigger:  trigger,
+                    min:     entry.weight_bounds.min,
+                    max:     entry.weight_bounds.max,
+                    desired: entry.weight_bounds.desired,
+                    trigger: trigger,
                 });
             }
         }
@@ -154,6 +153,13 @@ impl App {
 
 fn main() {
     telemetry::init();
+
+    telemetry::record_bounds(WeightBoundsRecord {
+        min:      0.0,
+        max:      0.0,
+        desired:  0.0,
+        trigger:  0.0,
+    });
 
     // config
     let config = service::Config {
