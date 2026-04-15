@@ -1,33 +1,121 @@
-use std::{collections::HashSet, f64::NAN, fs::File, io::Write, sync::OnceLock};
-
 mod types;
+use std::io::Write;
+use std::sync::OnceLock;
+
+use crossbeam::channel::Sender;
+use crossbeam::channel::Receiver;
+
 use types::Files;
-pub use types::Record;
 pub use types::WeightRecord;
 pub use types::PlateRecord;
+pub use types::ServiceStateRecord;
+pub use types::WeightBoundsRecord;
 pub use types::OrderRecord;
 pub use types::LogLevel;
+pub use types::RecordType;
 
-static HANDLE: OnceLock<crossbeam::channel::Sender<Record>> = OnceLock::new();
+type Payload = (RecordType, String);
+
+static HANDLE: OnceLock<Sender<Payload>> = OnceLock::new();
 
 pub fn record_weight(record: WeightRecord) {
-    let handle = HANDLE.get().expect("Failed to retrieve handle");
-    handle.send(Record::Weight(record)).expect("Why channel full??");
+    let data = format!(
+        "{}, {}, {}, {}\n", 
+        get_timestamp(), 
+        record.weight_0,
+        record.weight_1,
+        record.weight_total, 
+    );
+
+    send(RecordType::Weight, data);
 }
 
 pub fn record_plate(record: PlateRecord) {
-    let handle = HANDLE.get().expect("Failed to retrieve handle");
-    handle.send(Record::Plate(record)).expect("Why channel full??");
+    let data = format!(
+        "{}, {}, {}, {}, {}\n", 
+        get_timestamp(), 
+        record.peak,
+        record.drop,
+        record.exit,
+        record.in_bounds,
+    );
+
+    send(RecordType::Plate, data);
 }
 
-pub fn record_order(record: Option<OrderRecord>) {
-    let handle = HANDLE.get().expect("Failed to retrieve handle");
-    handle.send(Record::Order(record)).expect("Why channel full??");
+pub fn record_state(record: ServiceStateRecord) {
+    let data = format!(
+        "{}, {}, {}\n", 
+        get_timestamp(), 
+        record.state_id,
+        record.order_id,
+    );
+
+    send(RecordType::State, data);
+}
+
+pub fn record_bounds(record: WeightBoundsRecord) {
+    let data = format!(
+        "{}, {}, {}, {}, {}, {}\n", 
+        get_timestamp(), 
+        record.order_id,
+        record.min,
+        record.max,
+        record.desired,
+        record.trigger,
+    );
+
+    send(RecordType::Bounds, data);
+}
+
+pub fn record_order(record: OrderRecord) {
+    let start_time = format!(
+        "{}-{}-{}T{}:{}",
+        record.start_date.year,
+        record.start_date.month,
+        record.start_date.day,
+        record.from_time.hour,
+        record.from_time.minute,
+    );
+
+    let end_time = format!(
+        "{}-{}-{}T{}:{}",
+        record.end_date.year,
+        record.end_date.month,
+        record.end_date.day,
+        record.to_time.hour,
+        record.to_time.minute,
+    );
+
+    let data = format!(
+        "{}, {}, {}, {:.1}, {:.1}, {}, {}, {:.2}\n",
+        get_timestamp(),
+        record.id,
+        record.personel_id,
+        record.quantity_scrap,
+        record.quantity_good,
+        start_time,
+        end_time,
+        record.duration.as_secs_f64(),
+    );
+
+    send(RecordType::Order, data);
 }
 
 pub fn log(level: LogLevel, message: String) {
+    let data = format!(
+        "{}, {}, {}\n", 
+        get_timestamp(), 
+        level,
+        message,
+    );
+
+    send(RecordType::Log, data);
+}
+
+fn send(r_type: RecordType, data: String) {
     let handle = HANDLE.get().expect("Failed to retrieve handle");
-    handle.send(Record::Log(level, message)).expect("Why channel full??");
+    handle.send((r_type, data)).expect("Why channel full??");
 }
 
 pub fn init() {
@@ -38,107 +126,30 @@ pub fn init() {
 
     let files = Files::new(&format!("{}", sub_path));
 
-    std::thread::spawn(move || {
-        execute_worker(files, rx);
-    });
+    std::thread::spawn(move || execute_worker(files, rx));
 
     HANDLE.set(tx).expect("Failed to init telemetry");
 }
 
-fn execute_worker(
-    mut files: Files,
-    rx_record: crossbeam::channel::Receiver<Record>,
-) {
-    let mut registered_orders = HashSet::<i32>::new();
-
+fn execute_worker(mut files: Files,rx_record: Receiver<Payload>) {
     loop {
-        let record = rx_record.recv().expect("Channels should exit for the lifetime of the program");
+        let (r_type, data) = rx_record.recv()
+            .expect("Channels should exit for the lifetime of the program");
 
-        match record {
-            Record::Weight(record)  => write_weight(&mut files.weights, record),
-            Record::Plate(record)   => write_plate(&mut files.plates, record),
-            Record::Log(level, msg) => write_log(&mut files.logs, level, msg),
-            Record::Order(record) => {
-                match record {
-                    Some(order) => {
-                        if registered_orders.contains(&order.id) {
-                            continue;
-                        }
-                        registered_orders.insert(order.id);
-                        write_order(&mut files.orders, order);
-                    }
-                    None => {
-                        let order = OrderRecord {
-                            id:             0,
-                            weight_min:     NAN,
-                            weight_max:     NAN,
-                            weight_desired: NAN,
-                            weight_trigger: NAN,
-                        };
+        let file = match r_type {
+            RecordType::Weight => &mut files.weights,
+            RecordType::Plate  => &mut files.plates,
+            RecordType::State  => &mut files.states,
+            RecordType::Bounds => &mut files.bounds,
+            RecordType::Order  => &mut files.orders,
+            RecordType::Log    => &mut files.logs,
+        };
 
-                        write_order(&mut files.orders, order);
-                    },
-                }
-            },
-        }
+        file.write_all(data.as_bytes()).expect("Failed to write");
     }
 }
 
 fn get_timestamp() -> String {
     let now = chrono::Local::now();
     now.format("%Y-%m-%d %H:%M:%S%.6f").to_string()
-}
-
-fn write_weight(file: &mut File, record: WeightRecord) {
-    let data = format!(
-        "{}, {}, {}, {}\n", 
-        get_timestamp(), 
-        record.weight_0,
-        record.weight_1,
-        record.weight_total, 
-    );
-
-    write_data(file, data);
-}
-
-fn write_plate(file: &mut File, record: PlateRecord) {
-    let data = format!(
-        "{}, {}, {}, {}, {}\n", 
-        get_timestamp(), 
-        record.peak,
-        record.drop,
-        record.exit,
-        record.in_bounds,
-    );
-
-    write_data(file, data);
-}
-
-fn write_order(file: &mut File, record: OrderRecord) {
-    let data = format!(
-        "{}, {}, {}, {}, {}, {}\n", 
-        get_timestamp(), 
-        record.id,
-        record.weight_min,
-        record.weight_max,
-        record.weight_desired,
-        record.weight_trigger,
-    );
-
-    write_data(file, data);
-}
-
-fn write_log(file: &mut File, level: LogLevel, message: String) {
-    let data = format!(
-        "{}, {}, {}\n", 
-        get_timestamp(), 
-        level,
-        message,
-    );
-
-    write_data(file, data);
-}
-
-fn write_data(file: &mut File, data: String) {
-    file.write_all(data.as_bytes()).expect("Failed to write");
 }

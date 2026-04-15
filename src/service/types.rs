@@ -9,9 +9,9 @@ use super::State;
 pub struct Config {
     pub config_path: String,
     pub reconnect_attempts_max: u32,
-    pub timeout_reconnect: Duration,
-    pub timeout_heartbeat: Duration,
-    pub timeout_sending:      Duration,
+    pub reconnect_delay:  Duration,
+    pub send_delay:       Duration,
+    pub timeout_duration: Duration,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -1,4 +1,6 @@
 use anyhow::anyhow;
+use chrono::{Datelike, Timelike};
+
 use beas_bsl::{
     Client,
     api::{ Date, FilterBuilder, QueryOptions, Time, TimeReceipt },
@@ -11,9 +13,9 @@ use super::State;
 
 #[derive(Debug, Clone)]
 pub struct StateOne {
-    pub entry: Entry,
+    pub entry:      Entry,
     pub start_date: Date,
-    pub from_time: Time,
+    pub from_time:  Time,
 }
 
 pub fn get_next_state(client: &Client, state: StateOne) -> anyhow::Result<State> {
@@ -28,7 +30,17 @@ pub fn get_next_state(client: &Client, state: StateOne) -> anyhow::Result<State>
         return Ok(State::One(state));
     };
 
-    let state = StateTwo { state_one: state, personnel_id, quantity_scrap };
+    let now = chrono::Local::now();
+    let end_date = Date { year: now.year(), month: now.month(), day: now.day() };
+    let to_time  = Time { hour: now.hour(), minute: now.minute() };
+
+    let state = StateTwo { 
+        state_one: state, 
+        personnel_id, 
+        quantity_scrap,
+        end_date,
+        to_time
+    };
 
     telemetry::log(LogLevel::Info, format!("State Transition 1 -> 2: {:?}", &state));
 

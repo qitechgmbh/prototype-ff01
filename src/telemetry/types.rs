@@ -1,10 +1,14 @@
-use std::{fs::{self, File, OpenOptions}, path::{Path, PathBuf}};
+use std::{fs::{self, File, OpenOptions}, path::{Path, PathBuf}, time::Duration};
 
-pub enum Record {
-    Weight(WeightRecord),
-    Plate(PlateRecord),
-    Order(Option<OrderRecord>),
-    Log(LogLevel, String),
+use beas_bsl::api::{Date, Time};
+
+pub enum RecordType {
+    Weight,
+    Plate,
+    State,
+    Bounds,
+    Order,
+    Log,
 }
 
 pub struct WeightRecord {
@@ -20,12 +24,29 @@ pub struct PlateRecord {
     pub in_bounds:  bool,
 }
 
+pub struct ServiceStateRecord {
+    pub state_id: u32,
+    pub order_id: i32,
+}
+
+pub struct WeightBoundsRecord {
+    pub order_id: i32,
+    pub min:      f64,
+    pub max:      f64,
+    pub desired:  f64,
+    pub trigger:  f64,
+}
+
 pub struct OrderRecord {
     pub id:             i32,
-    pub weight_min:     f64,
-    pub weight_max:     f64,
-    pub weight_desired: f64,
-    pub weight_trigger: f64,
+    pub personel_id:    String,
+    pub quantity_scrap: f64,
+    pub quantity_good:  f64,
+    pub start_date:     Date,
+    pub from_time:      Time,
+    pub end_date:       Date,
+    pub to_time:        Time,
+    pub duration:       Duration,
 }
 
 pub enum LogLevel {
@@ -47,6 +68,8 @@ impl std::fmt::Display for LogLevel {
 pub struct Files {
     pub weights: File,
     pub plates:  File,
+    pub states:  File,
+    pub bounds:  File,
     pub orders:  File,
     pub logs:    File,
 }
@@ -59,13 +82,15 @@ impl Files {
         // Recursive directory creation
         fs::create_dir_all(&path).expect("Failed to create folder recursively");
 
-        // Create 3 CSV files inside the folder
+        // Create CSV files inside the folder
         let weights = Self::open_file(path.join("weights.csv"));
         let plates  = Self::open_file(path.join("plates.csv"));
+        let states  = Self::open_file(path.join("states.csv"));
+        let bounds  = Self::open_file(path.join("bounds.csv"));
         let orders  = Self::open_file(path.join("orders.csv"));
         let logs    = Self::open_file(path.join("logs.csv"));
 
-        return Files { weights, plates, orders, logs }
+        return Files { weights, plates, states, bounds, orders, logs }
     }
 
     fn open_file(path: PathBuf) -> File {

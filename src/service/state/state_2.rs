@@ -1,16 +1,16 @@
-// use anyhow::anyhow;
 use beas_bsl::{Client, api::{Date, Time, time_receipt}};
-use chrono::{Datelike, Local, Timelike};
 
-use crate::{service::State, telemetry::{self, LogLevel}};
+use crate::{service::State, telemetry::{self, LogLevel, OrderRecord}};
 
 use super::StateOne;
 
 #[derive(Debug, Clone)]
 pub struct StateTwo {
-    pub state_one: StateOne,
-    pub personnel_id: String,
+    pub state_one:      StateOne,
+    pub personnel_id:   String,
     pub quantity_scrap: f64,
+    pub end_date:       Date,
+    pub to_time:        Time,
 }
 
 pub fn get_next_state(
@@ -31,14 +31,25 @@ pub fn get_next_state(
     let personnel_id   = s2.personnel_id.clone();
     let quantity_scrap = s2.quantity_scrap;
 
-    let chrono_now = Local::now();
-    let end_date   = Date { year: chrono_now.year(), month: chrono_now.month(), day: chrono_now.day() };
-    let to_time    = Time { hour: chrono_now.hour(), minute: chrono_now.minute() };
+    let end_date = s2.end_date;
+    let to_time  = s2.to_time;
 
     let quantity_good = plate_count as f64 - quantity_scrap;
     let quantity_good = quantity_good.max(0.0);
 
     let duration = from_time.compute_duration(to_time);
+
+    telemetry::record_order(OrderRecord {
+        id: doc_entry,
+        personel_id: personnel_id.clone(),
+        quantity_scrap,
+        quantity_good,
+        start_date,
+        from_time,
+        end_date,
+        to_time,
+        duration,
+    });
 
     let request = time_receipt::post::Request {
         doc_entry:          doc_entry,

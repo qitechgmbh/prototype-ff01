@@ -1,27 +1,22 @@
 use std::{f64::NAN, time::{Duration, Instant}};
 
 mod telemetry;
+use telemetry::LogLevel;
+use telemetry::WeightBoundsRecord;
+use telemetry::PlateRecord ;
+use telemetry::WeightRecord;
 
 mod xtrem;
+
 mod scales;
+use scales::Scales;
 
 mod service;
 use service::Service;
+use service::State;
 
 mod plate_detect_task;
 use plate_detect_task::PlateDetectTask;
-
-use crate::{
-    scales::Scales, 
-    service::State
-};
-
-use crate::telemetry::{
-    LogLevel, 
-    OrderRecord, 
-    PlateRecord, 
-    WeightRecord
-};
 
 pub struct App {
     // state
@@ -32,9 +27,6 @@ pub struct App {
     pub scales:  Scales,
     pub service: Service,
     pub task:    Option<PlateDetectTask>,
-
-    // thing
-    service_state_mutation_counter: u64,
 }
 
 impl App {
@@ -75,6 +67,8 @@ impl App {
             wt
         };
 
+        let prev_state_idx = self.service.state().index();
+
         if let Err(e) = self.service.update(now, self.plate_count) {
             let msg = format!("Error while updating service: {}", e);
             println!("{}", msg);
@@ -82,11 +76,9 @@ impl App {
             return;
         }
 
-        let state_modified = 
-            self.service_state_mutation_counter != self.service.state_mutation_counter();
-        
-        self.service_state_mutation_counter = self.service.state_mutation_counter();
-        
+        let state_idx = self.service.state().index();
+        let state_modified = prev_state_idx != state_idx;
+
         if state_modified {
             self.task = None;
 
@@ -102,13 +94,13 @@ impl App {
                 self.task = Some(PlateDetectTask::new(trigger));
 
                 // record order
-                telemetry::record_order(Some(OrderRecord {
-                    id:             entry.doc_entry,
-                    weight_min:     entry.weight_bounds.min,
-                    weight_max:     entry.weight_bounds.max,
-                    weight_desired: entry.weight_bounds.desired,
-                    weight_trigger: trigger,
-                }));
+                telemetry::record_bounds(WeightBoundsRecord {
+                    order_id: entry.doc_entry,
+                    min:      entry.weight_bounds.min,
+                    max:      entry.weight_bounds.max,
+                    desired:  entry.weight_bounds.desired,
+                    trigger:  trigger,
+                });
             }
         }
 
@@ -167,9 +159,9 @@ fn main() {
     let config = service::Config {
         config_path: "/home/qitech/config.json".to_string(),
         reconnect_attempts_max: 10,
-        timeout_reconnect: Duration::from_millis(2500),
-        timeout_heartbeat: Duration::from_millis(60_000),
-        timeout_sending:   Duration::from_millis(100),
+        reconnect_delay:  Duration::from_secs(2),
+        timeout_duration: Duration::from_secs(60),
+        send_delay:       Duration::from_millis(250),
     };
 
     let mut app = App {
@@ -178,7 +170,6 @@ fn main() {
         scales:        Scales::new(),
         service:       Service::new(config),
         task:          None,
-        service_state_mutation_counter: 0,
     };
 
     app.service.set_enabled(true);

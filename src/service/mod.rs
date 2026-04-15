@@ -14,7 +14,7 @@ pub use types::Config;
 mod worker;
 use worker::Worker;
 
-use crate::telemetry::{self, LogLevel};
+use crate::telemetry::{self, LogLevel, ServiceStateRecord};
 
 #[derive(Debug)]
 pub struct Service {
@@ -22,16 +22,12 @@ pub struct Service {
 
     // state
     enabled: bool,
-    state: State,
-    state_mutation_counter: u64,
-    // reconnect_attempts: u32,
-    last_heartbeat_ts: Instant,
+    state:   State,
     last_reconnect_ts: Instant,
     last_send_ts:      Instant,
-    connection: Option<Connection>,
-
-    // completed
-    completed_orders: HashSet<i32>
+    last_recv_ts:      Instant,
+    connection:        Option<Connection>,
+    completed_orders:  HashSet<i32>
 }
 
 // public interface
@@ -43,13 +39,11 @@ impl Service {
             config,
             enabled: false, 
             state: State::Zero,
-            state_mutation_counter: 0,
-            // reconnect_attempts: 0,
-            last_heartbeat_ts: now,
             last_reconnect_ts: now,
             last_send_ts:      now,
+            last_recv_ts:      now,
             connection: None,
-            completed_orders: Default::default()
+            completed_orders: HashSet::new(),
         }
     }
 
@@ -66,8 +60,55 @@ impl Service {
         &self.state
     }
 
-    pub fn state_mutation_counter(&self) -> u64 {
-        self.state_mutation_counter
+
+    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<()> {
+        if !self.enabled {
+            self.set_state(State::Zero);
+            self.connection = None;
+            return Ok(());
+        }
+
+        let Some(mut connection) = self.get_or_create_connection(now)? else {
+            return Ok(());
+        };
+        
+        let result = if connection.has_pending() {
+            self.send_next(now, &mut connection)
+        } else {
+            self.recv_and_process(now, &mut connection, plate_count);
+            Ok(())
+        };
+
+        self.connection = Some(connection);
+        result
+    }
+}
+
+// utils
+impl Service {
+    fn create_connection(config_path: &str) -> anyhow::Result<Connection> {
+        let client = Self::create_client(config_path)?;
+
+        let (service_sender, worker_receiver)  = bounded::<Request>(4);
+        let (worker_sender,  service_receiver) = bounded::<Response>(4);
+        
+        let connection = Connection::new(service_sender, service_receiver);
+        let worker     = Worker::new(client, worker_sender, worker_receiver);
+        
+        let worker_handle = std::thread::spawn(move || Worker::run(worker));
+        _ = worker_handle;
+
+        Ok(connection)
+    }
+
+    fn create_client(config_path: &str) -> anyhow::Result<Client> {
+        let config = ClientConfig::from_file(config_path)
+            .map_err(|e| anyhow!("[Service_p10] Failed to read Config: {:?}", e))?;
+
+        let client = Client::new(config)
+            .map_err(|e| anyhow!("[Service_p10] Failed to create Client: {:?}", e))?;
+
+        Ok(client)
     }
 
     fn set_state(&mut self, state: State) {
@@ -75,7 +116,17 @@ impl Service {
             return;
         }
 
-        self.state_mutation_counter += 1;
+        let order_id = match &state {
+            State::Zero => 0,
+            State::One(state) => state.entry.doc_entry,
+            State::Two(state) => state.state_one.entry.doc_entry,
+        };
+
+        telemetry::record_state(ServiceStateRecord {
+            state_id: state.index(),
+            order_id: order_id,
+        });
+
         self.state = state;
     }
 
@@ -84,7 +135,7 @@ impl Service {
             return Ok(self.connection.take());
         }
 
-        if self.enabled && now.duration_since(self.last_reconnect_ts) < self.config.timeout_reconnect {
+        if self.enabled && now.duration_since(self.last_reconnect_ts) < self.config.reconnect_delay {
             return Ok(None);
         }
 
@@ -96,101 +147,64 @@ impl Service {
         );
 
         let connection = Self::create_connection(&self.config.config_path)?;
+        self.last_send_ts = now;
 
         telemetry::log(
             LogLevel::Info, 
-            format!("Successfully established connection to Beas-Bsl")
+            format!("Established connection to Beas-Bsl successfully!")
         );
 
         self.set_state(State::Zero);
         Ok(Some(connection))
     }
 
-    pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<()> {
-        if !self.enabled {
-            self.set_state(State::Zero);
-            self.connection = None;
-            return Ok(());
-        }
+    fn send_next(&mut self, now: Instant, connection: &mut Connection) -> anyhow::Result<()> {
+        let Some(response) = connection.recv() else {
+            if now.duration_since(self.last_recv_ts) > self.config.timeout_duration {
+                telemetry::log(
+                    LogLevel::Warn, 
+                    format!(
+                        "Timeout: Received no response after: {} seconds... Dropping connection", 
+                        self.config.timeout_duration.as_secs_f64()
+                    )
+                );
 
-        self.connection = self.get_or_create_connection(now)?;
+                self.set_state(State::Zero);
+                self.connection = None;
+            }
 
-        let Some(connection) = self.connection.as_mut() else {
             return Ok(());
         };
-        
-        if connection.has_pending() {
-            let Some(response) = connection.recv() else {
-                if now.duration_since(self.last_heartbeat_ts) > self.config.timeout_heartbeat {
-                    telemetry::log(
-                        LogLevel::Warn, 
-                        format!("Heartbeat timed out, dropping connection")
-                    );
 
-                    self.set_state(State::Zero);
-                    self.connection = None;
+        self.last_recv_ts = now;
+
+        match response {
+            Response::NextState(state) => {
+                if let State::One(data) = &state {
+                    if self.completed_orders.contains(&data.entry.doc_entry) {
+                        return Ok(());
+                    }
                 }
 
-                return Ok(());
-            };
+                if let State::Two(data) = &state {
+                    self.completed_orders.insert(data.state_one.entry.doc_entry);
+                }
 
-            self.last_heartbeat_ts = now;
+                self.set_state(state);
+                Ok(())
+            },
+            Response::Error(error) => {
+                return Err(anyhow!("Error in response: {:?}", error));
+            },
+        }
+    }
 
-            match response {
-                Response::NextState(state) => {
-                    if let State::One(data) = &state {
-                        if self.completed_orders.contains(&data.entry.doc_entry) {
-                            return Ok(());
-                        }
-                    }
-
-                    if let State::Two(data) = &state {
-                        self.completed_orders.insert(data.state_one.entry.doc_entry);
-                    }
-
-                    self.set_state(state);
-                },
-                Response::Error(error) => {
-                    return Err(anyhow!("Error in response: {:?}", error));
-                },
-            }
-        } else {
-            if now.duration_since(self.last_send_ts) < self.config.timeout_sending {
-                return Ok(());
-            }
-
-            connection.send(self.state.clone(), plate_count);
-            self.last_send_ts = now;
+    fn recv_and_process(&mut self, now: Instant, connection: &mut Connection, plate_count: u32) {
+        if now.duration_since(self.last_send_ts) < self.config.send_delay {
+            return;
         }
 
-        return Ok(());
-    }
-}
-
-// utils
-impl Service {
-    fn create_connection(config_path: &str) -> anyhow::Result<Connection> {
-        let client = Self::create_client(config_path)?;
-
-        let (service_sender, worker_receiver)  = bounded::<Request>(512);
-        let (worker_sender,  service_receiver) = bounded::<Response>(512);
-        
-        let connection = Connection::new(service_sender, service_receiver);
-        let worker     = Worker::new(client, worker_sender, worker_receiver);
-        
-        let worker_handle = std::thread::spawn(move || Worker::run(worker));
-        _ = worker_handle;
-
-        Ok(connection)
-    }
-
-    pub fn create_client(config_path: &str) -> anyhow::Result<Client> {
-        let config = ClientConfig::from_file(config_path)
-            .map_err(|e| anyhow!("[Service_p10] Failed to read Config: {:?}", e))?;
-
-        let client = Client::new(config)
-            .map_err(|e| anyhow!("[Service_p10] Failed to create Client: {:?}", e))?;
-
-        Ok(client)
+        connection.send(self.state.clone(), plate_count);
+        self.last_send_ts = now;
     }
 }
