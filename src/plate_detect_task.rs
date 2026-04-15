@@ -2,6 +2,7 @@
 pub struct PlateDetectTask {
     pub peak:    Option<f64>,
     pub trigger: f64,
+    pub seen_rise: bool,
 }
 
 impl PlateDetectTask {
@@ -9,6 +10,7 @@ impl PlateDetectTask {
         Self {
             trigger,
             peak: None,
+            seen_rise: false,
         }
     }
 
@@ -25,7 +27,13 @@ impl PlateDetectTask {
 
         // Rising phase → update peak
         if weight > current_peak {
+            self.seen_rise = true;
             self.peak = Some(weight);
+            return None;
+        }
+
+        // must rise first
+        if !self.seen_rise {
             return None;
         }
 
@@ -38,7 +46,8 @@ impl PlateDetectTask {
         }
 
         self.peak = None;
-        let out = (current_peak, drop);
-        return Some(out);
+        self.seen_rise = false;
+
+        return Some((current_peak, drop));
     }
 }
