@@ -82,7 +82,15 @@ impl App {
         if state_modified {
             self.task = None;
 
-            if let State::One(state) = self.service.state() {
+            if self.service.state().index() == 0 {
+                // record order
+                telemetry::record_bounds(WeightBoundsRecord {
+                    min:     0.0,
+                    max:     0.0,
+                    desired: 0.0,
+                    trigger: 0.0,
+                });
+            } else if let State::One(state) = self.service.state() {
                 let entry = &state.entry;
 
                 // reset counter
