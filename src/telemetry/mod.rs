@@ -20,7 +20,7 @@ static HANDLE: OnceLock<Sender<Payload>> = OnceLock::new();
 
 pub fn record_weight(record: WeightRecord) {
     let data = format!(
-        "{}, {}, {}, {}\n", 
+        "{}, {:.1}, {:.1}, {:.1}\n", 
         get_timestamp(), 
         record.weight_0,
         record.weight_1,
@@ -32,7 +32,7 @@ pub fn record_weight(record: WeightRecord) {
 
 pub fn record_plate(record: PlateRecord) {
     let data = format!(
-        "{}, {}, {}, {}, {}\n", 
+        "{}, {:.1}, {:.1}, {:.1}, {}\n", 
         get_timestamp(), 
         record.peak,
         record.drop,
@@ -56,7 +56,7 @@ pub fn record_state(record: ServiceStateRecord) {
 
 pub fn record_bounds(record: WeightBoundsRecord) {
     let data = format!(
-        "{}, {}, {}, {}, {}, {}\n", 
+        "{}, {}, {:.1}, {:.1}, {:.1}, {:.1}\n", 
         get_timestamp(), 
         record.order_id,
         record.min,

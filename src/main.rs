@@ -146,7 +146,7 @@ impl App {
         };
 
         println!(
-            "{} :: weight: ({} + {} = {}) | (task: {} | {}) : (plates: {}) : (ss_id: {}, order_id: {})", 
+            "{} :: scales: [w0: {:.1}, w0: {:.1}, wt: {:.1}] | task: [trigger: {},  peak: {}, count: {}] | service: [state_id: {}, order_id: {}]", 
             chrono_now, w0, w1, wt, trigger, peak, self.plate_count, self.service.state().index(), entry_id
         );
     }
