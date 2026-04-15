@@ -145,7 +145,7 @@ impl App {
             State::Two(state) => state.state_one.entry.doc_entry,
         };
 
-        println!("WEIGHT: {} | {}", self.scales.weight_1().unwrap_or(NAN), wt);
+        println!("WEIGHT: [w0: {:.1}, w1: {:.1}, wt: {:.1}]", w0, w1, wt);
 
         println!(
             "{} :: scales: [w0: {:.1}, w1: {:.1}, wt: {:.1}] | task: [trigger: {:.1},  peak: {:.1}, count: {}] | service: [state_id: {}, order_id: {}]", 
