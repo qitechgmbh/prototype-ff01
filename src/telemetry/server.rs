@@ -37,8 +37,28 @@ fn handle_client(mut stream: TcpStream, archive_dir: PathBuf) {
         Ok(len) => {
             let request = &buffer[0..len];
 
-            if request == b"GET\n" || request == b"GET\r\n" {
-                match create_zip(&archive_dir) {
+            if request.starts_with(b"GET ") {
+                let id_bytes = &request[4..];
+
+                // trim whitespace + CRLF
+                let id_str = std::str::from_utf8(id_bytes)
+                    .unwrap_or("")
+                    .trim() // removes \r, \n, spaces, tabs
+                    .trim_end_matches(|c| c == '\r' || c == '\n');
+
+                let Ok(id) = id_str.parse::<u64>()else {
+                    let _ = stream.write_all(b"Invalid id for GET request");
+                    return;
+                };
+
+                let path = archive_dir.join(format!("{}", id).to_string());
+
+                if !path.exists() {
+                    let _ = stream.write_all(b"null");
+                    return;
+                }
+
+                match create_zip(&path) {
                     Ok(zip_bytes) => {
                         let _ = stream.write_all(zip_bytes.as_slice());
                     }
@@ -50,6 +70,19 @@ fn handle_client(mut stream: TcpStream, archive_dir: PathBuf) {
                         let _ = stream.write_all(b"ZIP_ERROR");
                     }
                 }
+            } else if request.starts_with(b"LIST ALL") {
+                let mut output = String::new();
+
+                if let Ok(entries) = std::fs::read_dir(&archive_dir) {
+                    for entry in entries.flatten() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            output.push_str(name);
+                            output.push('\n');
+                        }
+                    }
+                }
+
+                let _ = stream.write_all(output.as_bytes());
             } else {
                 let _ = stream.write_all(b"Unknown Request");
             }
