@@ -1,4 +1,4 @@
-use std::{fs::{self, File, OpenOptions}, path::{Path, PathBuf}, time::Duration};
+use std::{fs::{self, File, OpenOptions}, path::{PathBuf}, time::Duration};
 
 use beas_bsl::api::{Date, Time};
 
@@ -74,19 +74,18 @@ pub struct Files {
 }
 
 impl Files {
-    pub fn new(path: &str) -> Self {
-        let path = Path::new(&path);
+    pub fn new(base_path: &PathBuf) -> Self {
 
         // Recursive directory creation
-        fs::create_dir_all(&path).expect("Failed to create folder recursively");
+        fs::create_dir_all(base_path).expect("Failed to create folder recursively");
 
         // Create CSV files inside the folder
-        let weights = Self::open_file(path.join("weights.csv"));
-        let plates  = Self::open_file(path.join("plates.csv"));
-        let states  = Self::open_file(path.join("states.csv"));
-        let bounds  = Self::open_file(path.join("bounds.csv"));
-        let orders  = Self::open_file(path.join("orders.csv"));
-        let logs    = Self::open_file(path.join("logs.csv"));
+        let weights = Self::open_file(base_path.join("weights.csv"));
+        let plates  = Self::open_file(base_path.join("plates.csv"));
+        let states  = Self::open_file(base_path.join("states.csv"));
+        let bounds  = Self::open_file(base_path.join("bounds.csv"));
+        let orders  = Self::open_file(base_path.join("orders.csv"));
+        let logs    = Self::open_file(base_path.join("logs.csv"));
 
         return Files { weights, plates, states, bounds, orders, logs }
     }
