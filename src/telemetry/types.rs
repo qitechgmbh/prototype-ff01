@@ -74,9 +74,8 @@ pub struct Files {
 }
 
 impl Files {
-    pub fn new(sub_path: &str) -> Self {
-        let folder_path = format!("/home/qitech/measurements/{}", sub_path);
-        let path = Path::new(&folder_path);
+    pub fn new(path: &str) -> Self {
+        let path = Path::new(&path);
 
         // Recursive directory creation
         fs::create_dir_all(&path).expect("Failed to create folder recursively");

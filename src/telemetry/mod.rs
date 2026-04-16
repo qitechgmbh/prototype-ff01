@@ -1,10 +1,10 @@
-mod types;
 use std::io::Write;
 use std::sync::OnceLock;
 
 use crossbeam::channel::Sender;
 use crossbeam::channel::Receiver;
 
+mod types;
 use types::Files;
 pub use types::WeightRecord;
 pub use types::PlateRecord;
@@ -13,6 +13,8 @@ pub use types::WeightBoundsRecord;
 pub use types::OrderRecord;
 pub use types::LogLevel;
 pub use types::RecordType;
+
+mod server;
 
 type Payload = (RecordType, String);
 
@@ -121,19 +123,26 @@ pub fn init() {
     let (tx, rx) = crossbeam::channel::unbounded();
 
     let now = chrono::Local::now();
-    let sub_path = now.format("%Y%m%d%H%M%S");
+    let root_path = &"/home/qitech/measurements/";
 
-    let files = Files::new(&format!("{}", sub_path));
-
-    std::thread::spawn(move || execute_worker(files, rx));
+    std::thread::spawn(move || execute_worker(&"/home/qitech/measurements", rx));
 
     HANDLE.set(tx).expect("Failed to init telemetry");
 }
 
-fn execute_worker(mut files: Files,rx_record: Receiver<Payload>) {
+fn execute_worker(root_path: &str, rx_record: Receiver<Payload>) {
+    let now      = chrono::Local::now();
+    let sub_path = now.format("%Y%m%d%H%M%S");
+    let path     = &format!("{}/{}", root_path, sub_path);
+
+    let mut files     = Files::new(path);
+    let mut last_date = chrono::Local::now();
+
     loop {
         let (r_type, data) = rx_record.recv()
-            .expect("Channels should exit for the lifetime of the program");
+            .expect("Channels should exist for the lifetime of the program");
+
+        
 
         let file = match r_type {
             RecordType::Weight => &mut files.weights,
@@ -144,6 +153,9 @@ fn execute_worker(mut files: Files,rx_record: Receiver<Payload>) {
             RecordType::Log    => &mut files.logs,
         };
 
+        // 00
+        // 01
+        // 23
         file.write_all(data.as_bytes()).expect("Failed to write");
     }
 }
