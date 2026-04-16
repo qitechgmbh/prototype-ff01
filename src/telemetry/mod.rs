@@ -154,6 +154,8 @@ fn execute_worker(exe_dir: PathBuf, root_dir: PathBuf, rx_record: Receiver<Paylo
     let mut last_date = chrono::Local::now();
     let mut files     = Some(Files::new(&tmp_dir));
 
+    println!("files: {:?}", tmp_dir);
+
     loop {
         let (r_type, data) = rx_record.recv()
             .expect("Channels should exist for the lifetime of the program");
