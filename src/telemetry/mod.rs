@@ -122,6 +122,7 @@ fn send(r_type: RecordType, data: String) {
     handle.send((r_type, data)).expect("Why channel full??");
 }
 
+#[allow(deprecated)]
 pub fn init() {
     let (tx, rx) = crossbeam::channel::unbounded();
 
