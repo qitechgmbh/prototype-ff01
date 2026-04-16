@@ -17,7 +17,7 @@ pub use types::OrderRecord;
 pub use types::LogLevel;
 pub use types::RecordType;
 
-// mod server;
+mod server;
 
 type Payload = (RecordType, String);
 
@@ -134,10 +134,10 @@ pub fn init() {
     let home_dir         = std::env::home_dir().expect("Needs home dir");
     let archive_root_dir = home_dir.join("telemetry");
 
-    // std::thread::spawn({
-    //     let archive_root_dir = archive_root_dir.clone();
-    //     move || server::run(archive_root_dir)
-    // });
+    std::thread::spawn({
+        let archive_root_dir = archive_root_dir.clone();
+        move || server::run(archive_root_dir)
+    });
 
     std::thread::spawn({
         let archive_root_dir = archive_root_dir.clone();
