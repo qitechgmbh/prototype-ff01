@@ -1,7 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 
-from colors import COLOR_PALETTE
+from .colors import COLOR_PALETTE
 
 def init(path, fig):
     columns = [

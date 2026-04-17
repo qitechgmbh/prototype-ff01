@@ -2,8 +2,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from colors import COLOR_PALETTE
-from utils import extend, init_df, read_df
+from .colors import COLOR_PALETTE
+from .utils import extend, init_df, read_df
 
 def init(path, fig, last_ts):
     columns = [

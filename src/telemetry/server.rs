@@ -20,7 +20,8 @@ pub fn run(archive_dir: PathBuf) -> anyhow::Result<()> {
                 thread::spawn(move || handle_client(stream, dir));
             }
             Err(e) => {
-                telemetry::log(LogLevel::Error, format!("[Server]: Opening Stream {}", e));
+                let msg = format!("[Server]: Opening Stream {}", e);
+                telemetry::log(LogLevel::Error, msg);
             }
         }
     }
@@ -29,7 +30,8 @@ pub fn run(archive_dir: PathBuf) -> anyhow::Result<()> {
 }
 
 fn handle_client(mut stream: TcpStream, archive_dir: PathBuf) {
-    telemetry::log(LogLevel::Info, format!("[Server::Client]: connected"));
+    let msg = format!("[Server::Client]: connected");
+    telemetry::log(LogLevel::Info, msg);
 
     let mut buffer = [0; 1024];
 
@@ -37,64 +39,74 @@ fn handle_client(mut stream: TcpStream, archive_dir: PathBuf) {
         Ok(len) => {
             let request = &buffer[0..len];
 
-            if request.starts_with(b"GET ") {
-                let id_bytes = &request[4..];
-
-                // trim whitespace + CRLF
-                let id_str = std::str::from_utf8(id_bytes)
-                    .unwrap_or("")
-                    .trim() // removes \r, \n, spaces, tabs
-                    .trim_end_matches(|c| c == '\r' || c == '\n');
-
-                let Ok(id) = id_str.parse::<u64>()else {
-                    let _ = stream.write_all(b"Invalid id for GET request");
-                    return;
-                };
-
-                let path = archive_dir.join(format!("{}", id).to_string());
-
-                if !path.exists() {
-                    let _ = stream.write_all(b"null");
-                    return;
-                }
-
-                match create_zip(&path) {
-                    Ok(zip_bytes) => {
-                        let _ = stream.write_all(zip_bytes.as_slice());
-                    }
-                    Err(e) => {
-                        telemetry::log(
-                            LogLevel::Error, 
-                            format!("[Server::Client]: Zip failed {}", e)
-                        );
-                        let _ = stream.write_all(b"ZIP_ERROR");
-                    }
+            let response = if request.starts_with(b"GET ") {
+                if request.len() >= 5 {
+                    handle_get_request(&request[4..], &archive_dir)
+                } else {
+                    Vec::from(b"[Error] Missing id")
                 }
             } else if request.starts_with(b"LIST ALL") {
-                let mut output = String::new();
-
-                if let Ok(entries) = std::fs::read_dir(&archive_dir) {
-                    for entry in entries.flatten() {
-                        if let Some(name) = entry.file_name().to_str() {
-                            output.push_str(name);
-                            output.push('\n');
-                        }
-                    }
-                }
-
-                let _ = stream.write_all(output.as_bytes());
+                handle_list_all_request(&archive_dir)
             } else {
-                let _ = stream.write_all(b"Unknown Request");
-            }
+                Vec::from(b"[Error] Unknown Request")
+            };
+
+            _ = stream.write_all(&response);
         }
         Err(e) => {
-            telemetry::log(
-                LogLevel::Error, 
-                format!("[Server::Client]:Failed to read request: {}", e)
-            );
-            return;
+            let msg = format!("[Server::Client]:Failed to read request: {}", e);
+            telemetry::log(LogLevel::Error, msg);
         }
     }
+}
+
+fn handle_get_request(
+    data: &[u8], 
+    archive_dir: &PathBuf
+) -> Vec<u8> {
+    // trim whitespace + CRLF
+    let id_str = std::str::from_utf8(data)
+        .unwrap_or("")
+        .trim() // removes \r, \n, spaces, tabs
+        .trim_end_matches(|c| c == '\r' || c == '\n');
+
+    let Ok(id) = id_str.parse::<u64>()else {
+        return Vec::from(b"[Error] Failed to parse id");
+    };
+
+    let path = archive_dir.join(format!("{}", id).to_string());
+
+    if !path.exists() {
+        return Vec::from(b"[Error] No such id");
+    }
+
+    match create_zip(&path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            let msg = format!("[Server::Client]: Zip failed {}", e);
+            telemetry::log(LogLevel::Error, msg.clone());
+            Vec::from(format!("[Error]: Zip failed {}", e))
+        }
+    }
+}
+
+fn handle_list_all_request(archive_dir: &PathBuf) -> Vec<u8> {
+    let mut output = String::new();
+
+    if !archive_dir.exists() {
+        return Vec::from(b"[Error] Missing archive dir");
+    }
+
+    if let Ok(entries) = std::fs::read_dir(&archive_dir) {
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                output.push_str(name);
+                output.push('\n');
+            }
+        }
+    }
+
+    Vec::from(output.as_bytes())
 }
 
 fn create_zip(dir: &Path) -> std::io::Result<Vec<u8>> {

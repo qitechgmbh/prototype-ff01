@@ -2,6 +2,7 @@ use std::{fs::{self, File, OpenOptions}, path::{PathBuf}, time::Duration};
 
 use beas_bsl::api::{Date, Time};
 
+#[derive(Debug, Clone, Copy)]
 pub enum RecordType {
     Weight,
     Plate,
@@ -9,6 +10,20 @@ pub enum RecordType {
     Bounds,
     Order,
     Log,
+}
+
+impl RecordType {
+    pub fn to_str(self) -> &'static str {
+        use RecordType::*;
+        match self {
+            Weight => "Weight",
+            Plate  => "Plate",
+            State  => "State",
+            Bounds => "Bounds",
+            Order  => "Order",
+            Log    => "Log",
+        }
+    }
 }
 
 pub struct WeightRecord {

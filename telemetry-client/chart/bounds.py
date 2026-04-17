@@ -3,8 +3,8 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import numpy as np
 
-from colors import COLOR_PALETTE
-from utils import extend, init_df
+from .colors import COLOR_PALETTE
+from .utils import extend, init_df
 
 def init(path, fig, last_ts):
     columns = [

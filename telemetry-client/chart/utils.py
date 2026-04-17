@@ -1,7 +1,7 @@
 import pandas as pd
 
-def read_df(path, name, columns):
-    df = pd.read_csv(f"{path}/{name}.csv", header=None, names=columns)
+def read_df(data, name, columns):
+    df = pd.read_csv(data, header=None, names=columns)
 
     # strip whitespace from all string columns
     for col in df.select_dtypes(include="object").columns:
@@ -9,8 +9,8 @@ def read_df(path, name, columns):
 
     return df
 
-def init_df(path, name, columns):
-    df = read_df(path, name, columns)
+def init_df(file_obj, name, columns):
+    df = read_df(file_obj, name, columns)
 
     df["time"] = pd.to_datetime(df["time"], format="mixed")
 

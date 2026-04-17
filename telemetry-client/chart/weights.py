@@ -2,10 +2,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-from colors import COLOR_PALETTE
-from utils  import extend, init_df, read_df
+from .colors import COLOR_PALETTE
+from .utils  import extend, init_df, read_df
 
-def read(path):
+def read(data):
     columns = [
         "time",
         "weight_0",
@@ -13,10 +13,10 @@ def read(path):
         "weight_total",
     ]
 
-    return read_df(path, "weights", columns)
+    return read_df(data, "weights", columns)
 
 
-def init(path, fig):
+def init(data, fig):
     columns = [
         "time",
         "weight_0",
@@ -30,7 +30,7 @@ def init(path, fig):
         "weight_total": COLOR_PALETTE["text"],
     }
 
-    df = read(path)
+    df = read(data)
 
     for col in columns[1:]:
         fig.add_trace(

@@ -1,14 +1,10 @@
 use std::env;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use chrono::Timelike;
 use crossbeam::channel::Sender;
-use crossbeam::channel::Receiver;
 
 mod types;
-use types::Files;
 pub use types::WeightRecord;
 pub use types::PlateRecord;
 pub use types::ServiceStateRecord;
@@ -18,10 +14,12 @@ pub use types::LogLevel;
 pub use types::RecordType;
 
 mod server;
+mod worker;
+mod live_data;
 
 type Payload = (RecordType, String);
 
-static HANDLE: OnceLock<Sender<Payload>> = OnceLock::new();
+static HANDLE: OnceLock<(Sender<Payload>, Sender<Payload>)> = OnceLock::new();
 
 pub fn record_weight(record: WeightRecord) {
     let data = format!(
@@ -118,13 +116,15 @@ pub fn log(level: LogLevel, message: String) {
 }
 
 fn send(r_type: RecordType, data: String) {
-    let handle = HANDLE.get().expect("Failed to retrieve handle");
-    handle.send((r_type, data)).expect("Why channel full??");
+    let (worker_tx, live_data_tx) = HANDLE.get().expect("Failed to retrieve handle");
+    worker_tx.send((r_type, data.clone())).expect("worker channel is full");
+    live_data_tx.send((r_type, data)).expect("live data channel is full");
 }
 
 #[allow(deprecated)]
 pub fn init() {
-    let (tx, rx) = crossbeam::channel::unbounded();
+    let (tx0, rx0) = crossbeam::channel::unbounded();
+    let (tx1, rx1) = crossbeam::channel::unbounded();
 
     let exe_path: PathBuf = env::current_exe().expect("Requires exe path");
     let exe_dir = exe_path
@@ -135,74 +135,19 @@ pub fn init() {
     let home_dir         = std::env::home_dir().expect("Needs home dir");
     let archive_root_dir = home_dir.join("telemetry");
 
+    HANDLE.set((tx0, tx1)).expect("Failed to init telemetry");
+
+    std::thread::spawn({
+        let archive_root_dir = archive_root_dir.clone();
+        move || worker::run(exe_dir, archive_root_dir, rx0)
+    });
+
     std::thread::spawn({
         let archive_root_dir = archive_root_dir.clone();
         move || server::run(archive_root_dir)
     });
 
-    std::thread::spawn({
-        let archive_root_dir = archive_root_dir.clone();
-        move || execute_worker(exe_dir, archive_root_dir, rx)
-    });
-
-    HANDLE.set(tx).expect("Failed to init telemetry");
-}
-
-fn execute_worker(exe_dir: PathBuf, root_dir: PathBuf, rx_record: Receiver<Payload>) {
-    let tmp_dir = exe_dir.join("tmp-telemetry");
-
-    let mut last_date = chrono::Local::now();
-    let mut files     = Some(Files::new(&tmp_dir));
-
-    loop {
-        let (r_type, data) = rx_record.recv()
-            .expect("Channels should exist for the lifetime of the program");
-
-        let current_date = chrono::Local::now();
-
-        let snapshot_complete = 
-            last_date.date_naive() != current_date.date_naive() 
-            || last_date.hour() != current_date.hour()
-            || last_date.minute() != current_date.minute();
-
-        last_date = current_date;
-
-        if snapshot_complete {
-            // date changed, create new entry
-            let snapshot_id = current_date.minute().to_string();
-            let datestamp   = current_date.format("%Y%m%d").to_string();
-            let archive_dir = PathBuf::from(root_dir.join(datestamp).join(snapshot_id));
-
-            // drop files to avoid potential problems when moving the files
-            _ = files.take(); // drop current files
-            submit_entry(&tmp_dir, &archive_dir);
-            files = Some(Files::new(&tmp_dir));
-        }
-
-        let files = &mut files.as_mut() .expect("Only None during transfer");
-        let file = match r_type {
-            RecordType::Weight => &mut files.weights,
-            RecordType::Plate  => &mut files.plates,
-            RecordType::State  => &mut files.states,
-            RecordType::Bounds => &mut files.bounds,
-            RecordType::Order  => &mut files.orders,
-            RecordType::Log    => &mut files.logs,
-        };
-
-        file.write_all(data.as_bytes()).expect("Failed to write");
-    }
-}
-
-/// move measurements from temp to archive dir
-fn submit_entry(tmp_dir: &PathBuf, archive_dir: &PathBuf) {
-    std::fs::create_dir_all(archive_dir).expect("create archive dir failed");
-
-    std::fs::rename(tmp_dir.join("weights.csv"), archive_dir.join("weights.csv")).expect("move weights failed");
-    std::fs::rename(tmp_dir.join("plates.csv"),  archive_dir.join("plates.csv")).expect("move plates failed");
-    std::fs::rename(tmp_dir.join("states.csv"),  archive_dir.join("states.csv")).expect("move states failed");
-    std::fs::rename(tmp_dir.join("bounds.csv"),  archive_dir.join("bounds.csv")).expect("move bounds failed");
-    std::fs::rename(tmp_dir.join("orders.csv"),  archive_dir.join("orders.csv")).expect("move orders failed");
-    std::fs::rename(tmp_dir.join("logs.csv"),    archive_dir.join("logs.csv")).expect("move logs failed");
+    std::thread::spawn(move || live_data::run(rx1));
 }
 
 fn get_timestamp() -> String {
@@ -212,9 +157,38 @@ fn get_timestamp() -> String {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     #[test]
     pub fn my_test() {
         super::init();
-        loop {}
+        loop {
+            // seed from current time
+            let mut seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos();
+
+            let w0 = (next_rand(&mut seed) % 6) as f64;
+            let w1 = (next_rand(&mut seed) % 6) as f64;
+
+            super::record_weight(super::WeightRecord { 
+                weight_0: w0, 
+                weight_1: w1, 
+                weight_total: w0 + w1 
+            });
+
+            //super::log(LogLevel::Info, "Hello World".to_string());
+            std::thread::sleep(Duration::from_millis(1000 / 12));
+        }
+    }
+
+    fn next_rand(seed: &mut u32) -> u32 {
+        let mut x = *seed;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        *seed = x;
+        x
     }
 }
