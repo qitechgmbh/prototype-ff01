@@ -1,27 +1,27 @@
 import asyncio
 from textual.screen import Screen
-from textual.widgets import Label
+from textual.widgets import Label, Log
 
 
 class LiveTCPScreen(Screen):
     def compose(self):
-        yield Label("Connecting...", id="out")
+        self.logger = Log()
+        yield self.logger
 
     async def on_mount(self):
-        self.output = self.query_one("#out", Label)
-
+        self.logger.write_line(f"Connecting...")
         try:
             self.reader, self.writer = await asyncio.open_connection(
                 "127.0.0.1", 55667
             )
         except Exception as e:
-            self.output.update(f"Connection failed: {e}")
+            self.logger.write_line(f"Connection failed: {e}")
             return
 
         self.run_worker(self.read_loop)
 
     async def read_loop(self):
-        self.output.update("Connected. Waiting for data...\n")
+        self.logger.write_line("Connected. Waiting for data...\n")
 
         while True:
             data = await self.reader.readline()
@@ -30,8 +30,7 @@ class LiveTCPScreen(Screen):
 
             text = data.decode().strip()
 
-            # ✅ This is safe inside worker in Textual
-            self.output.update(text)
+            self.logger.write_line(text)
 
     def on_key(self, event):
         if event.key == "escape":

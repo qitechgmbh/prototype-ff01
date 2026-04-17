@@ -8,12 +8,10 @@ import archive
 
 class MenuScreen(Screen):
     def compose(self) -> ComposeResult:
-        yield Header()
         with Vertical(id="menu"):
-            yield Button("Live Data", id="live_data")
-            yield Button("Archive",   id="archive")
-            yield Button("Exit",      id="exit")
-        yield Footer()
+            yield Button("Live Data", id="live_data", classes="menu-btn")
+            yield Button("Archive",   id="archive",   classes="menu-btn")
+            yield Button("Exit",      id="exit",      classes="menu-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         app = self.app
@@ -26,11 +24,14 @@ class MenuScreen(Screen):
             app.exit()
 
 class EntryApp(App):
+    CSS_PATH = "styles.tcss"
+
     def __init__(self):
         super().__init__()
         self.entries = []
 
     def on_mount(self):
+        self.theme = "catppuccin-macchiato"
         self.push_screen(MenuScreen())
 
 

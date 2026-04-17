@@ -43,7 +43,7 @@ class ArchivePage(Screen):
                     self.days_list = ListView()
                     yield self.days_list
 
-            yield Button("Synchronize", id="synchronize")
+            yield Button("Synchronize", id="synchronize", classes="sync-btn")
 
     def on_mount(self):
         self.refresh_data()

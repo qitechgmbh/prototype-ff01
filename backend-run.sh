@@ -37,4 +37,4 @@ fi
 
 # Enter nix shell
 echo "Running prototype"
-nix-shell --run "cargo run"
+nix-shell --run "cargo run backend"
