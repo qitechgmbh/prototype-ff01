@@ -50,15 +50,18 @@ def open_chart(path):
     logs   .init(files["logs.csv"],    fig)
 
     # Layout
-    fig.update_layout(
-        dragmode="pan",
-        title=str(path.resolve()),
-        xaxis_title="Time",
-        yaxis_title="Weight",
-        hovermode="x unified"
-    )
+    # fig.update_layout(
+    #     dragmode="pan",
+    #     title=str(path.resolve()),
+    #     xaxis_title="Time",
+    #     yaxis_title="Weight",
+    #     hovermode="x unified"
+    # )
 
-    fig.show(config = {'scrollZoom': True})
+    print(fig)
+
+    return fig
+    # fig.show(config = {'scrollZoom': True})
 
 
 def extract_files(path):
