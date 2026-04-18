@@ -3,14 +3,14 @@ import plotly.graph_objects as go
 
 from .colors import COLOR_PALETTE
 
-def init(path, fig):
+def init(data, fig):
     columns = [
         "time",
         "type",
         "data",
     ]
 
-    df = pd.read_csv(f"{path}/logs.csv", header=None, names=columns, usecols=[0, 1, 2])
+    df = pd.read_csv(data, header=None, names=columns, usecols=[0, 1, 2])
 
     for col in df.select_dtypes(include="object").columns:
         df[col] = df[col].str.strip()

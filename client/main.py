@@ -1,39 +1,110 @@
-from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Button, Input, ListView, ListItem, Label
-from textual.containers import Vertical
-from textual.screen import Screen
+from dash import Dash, html, dcc, callback, Output, Input
+import plotly.express as px
+import pandas as pd
 
-import live_data
-import archive  
+app = Dash()
+app.title = "Telemetry Client"
 
-class MenuScreen(Screen):
-    def compose(self) -> ComposeResult:
-        with Vertical(id="menu"):
-            yield Button("Live Data", id="live_data", classes="menu-btn")
-            yield Button("Archive",   id="archive",   classes="menu-btn")
-            yield Button("Exit",      id="exit",      classes="menu-btn")
+app.layout = [
+    # html.H1(children='QiTech Telemetry Client v0.1', style={'textAlign':'left'}),
+    dcc.Graph(
+        id="graph-content",
+        config={"scrollZoom": True}
+    ),
+    html.Div(
+        [
+            dcc.Dropdown(
+                options=[
+                    {"label": "FF01", "value": "ff01"},
+                    {"label": "FF02", "value": "ff02"},
+                ],
+                value="ff01",
+                id="machine-selection",
+                searchable=False,
+                clearable=False,
+            ),
+            dcc.Tabs([
+                dcc.Tab(label="Live", children=[
+                    
+                ]),
+                dcc.Tab(label="Archiv", children=[
+                    dcc.Tabs([
+                        dcc.Tab(label="Aufträge", children=[
+                            dcc.Dropdown(
+                                options=[
+                                    {"label": "56569", "value": "56569"},
+                                    {"label": "55608", "value": "55608"},
+                                ],
+                                value="56569",
+                                id="order-selection",
+                                searchable=True,
+                                clearable=False,
+                            ),
+                        ]),
+                        dcc.Tab(label="Tage", children=[
+                            dcc.Dropdown(
+                                options=[
+                                    {"label": "16/04/26", "value": "20260416"},
+                                    {"label": "17/04/26", "value": "20260417"},
+                                    {"label": "18/04/26", "value": "20260418"},
+                                ],
+                                value="20260416",
+                                id="day-selection",
+                                searchable=True,
+                                clearable=False,
+                                placeholder="Suche"
+                            ),
+                        ])
+                    ])
+                ]),
+                dcc.Tab(label="Import", children=[
+                    dcc.Upload(
+                        id="upload-data",
+                        children=html.Button("Datei Auswählen"),
+                        multiple=False
+                    )
+                ])
+            ]),
+            # dcc.Graph(id='graph-content')
+        ],
+        id='app-root'
+    ),
+]
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        app = self.app
+@callback(
+    Output('graph-content', 'figure'),
+    Input('machine-selection', 'value')
+)
+def update_graph(value):
+# Custom data (3 entries)
+    dff = pd.DataFrame({
+        "year": [2000, 2010, 2020],
+        "pop": [5, 7, 9]
+    })
 
-        if event.button.id == "live_data":
-            app.push_screen(live_data.LiveTCPScreen())
-        elif event.button.id == "archive":
-            app.push_screen(archive.ArchivePage())
-        elif event.button.id == "exit":
-            app.exit()
+    value = "Sample Data"
 
-class EntryApp(App):
-    CSS_PATH = "styles.tcss"
+    fig = px.line(
+        dff,
+        x="year",
+        y="pop",
+    )
 
-    def __init__(self):
-        super().__init__()
-        self.entries = []
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="white", family="JetBrains Mono"),
+        xaxis_title=None,
+        yaxis_title=None,
+        dragmode="pan"
+    )
 
-    def on_mount(self):
-        self.theme = "catppuccin-macchiato"
-        self.push_screen(MenuScreen())
+    fig.update_traces(
+        line=dict(color="#00d4ff", width=3)
+    )
 
+    return fig
 
-if __name__ == "__main__":
-    EntryApp().run()
+if __name__ == '__main__':
+    app.run(debug=True)

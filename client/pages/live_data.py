@@ -2,8 +2,7 @@ import asyncio
 from textual.screen import Screen
 from textual.widgets import Label, Log
 
-
-class LiveTCPScreen(Screen):
+class LiveDataScreen(Screen):
     def compose(self):
         self.logger = Log()
         yield self.logger

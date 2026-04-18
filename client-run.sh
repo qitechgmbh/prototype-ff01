@@ -1,1 +1,1 @@
-python ./client/main.py
+./venv/bin/python ./client/main.py

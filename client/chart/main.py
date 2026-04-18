@@ -44,10 +44,10 @@ def open_chart(path):
     files["weights.csv"].seek(0)
 
     bounds .init(files["bounds.csv"],  fig, last_ts)
-    states .init(files["states.csv"],  fig, last_ts)
+    states .init(files, fig, last_ts)
     weights.init(files["weights.csv"], fig)
     plates .init(files["plates.csv"],  fig, last_ts)
-    # logs   .init(files["logs.csv"],    fig)
+    logs   .init(files["logs.csv"],    fig)
 
     # Layout
     fig.update_layout(

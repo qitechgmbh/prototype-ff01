@@ -15,7 +15,6 @@ from pages.sync import SyncPage
 from chart import open_chart
 
 class ArchivePage(Screen):
-
     def __init__(self):
         super().__init__()
 
@@ -23,12 +22,11 @@ class ArchivePage(Screen):
 
         self.base_path_days = base_path / "days"
         self.base_path_days.mkdir(parents=True, exist_ok=True)
+        self.days = []
 
         self.base_path_orders = base_path / "orders"
         self.base_path_orders.mkdir(parents=True, exist_ok=True)
-
         self.orders = []
-        self.days   = []
 
     def compose(self):
         with Vertical():
@@ -52,23 +50,17 @@ class ArchivePage(Screen):
         self.refresh_data()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        app = self.app
-
         if event.button.id == "synchronize":
-            app.push_screen(SyncPage())
+            self.app.push_screen(SyncPage())
 
     def refresh_data(self):
-        self.orders.clear()
-        self.load_orders()
-        self.orders.sort(reverse=True)
-
-        self.days.clear()
-        self.load_days()
-        self.days.sort(reverse=True)
-
+        self.update_orders()
+        self.update_days()
         self.update_ui()
 
-    def load_days(self):
+    def update_days(self):
+        self.days.clear()
+
         if not self.base_path_days.exists():
             return
 
@@ -83,8 +75,12 @@ class ArchivePage(Screen):
 
             if len(name) == 8 and name.isdigit():
                 self.days.append(name)
+        
+        self.days.sort(reverse=True)
 
-    def load_orders(self):
+    def update_orders(self):
+        self.orders.clear()
+
         if not self.base_path_orders.exists():
             return
 
@@ -99,6 +95,8 @@ class ArchivePage(Screen):
 
             if name.isdigit():
                 self.orders.append(name)
+        
+        self.orders.sort(reverse=True)
 
     def update_ui(self):
         self.days_list.clear()
