@@ -39,7 +39,9 @@ fn handle_client(mut stream: TcpStream, archive_dir: PathBuf) {
         Ok(len) => {
             let request = &buffer[0..len];
 
-            let response = if request.starts_with(b"GET ") {
+            let response = if request == b"GET ID" {
+                Vec::from(b"FF01")
+            }  else if request.starts_with(b"GET ") {
                 if request.len() >= 5 {
                     handle_get_request(&request[4..], &archive_dir)
                 } else {
@@ -47,7 +49,7 @@ fn handle_client(mut stream: TcpStream, archive_dir: PathBuf) {
                 }
             } else if request.starts_with(b"LIST ALL") {
                 handle_list_all_request(&archive_dir)
-            } else {
+            }else {
                 Vec::from(b"[Error] Unknown Request")
             };
 

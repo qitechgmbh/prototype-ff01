@@ -29,26 +29,25 @@ impl RecordType {
 pub struct WeightRecord {
     pub weight_0:     f64,
     pub weight_1:     f64,
-    pub weight_total: f64,
+    pub weight_total: f64, // 0.0 - 600.0 -> u16
 }
 
 pub struct PlateRecord {
-    pub peak:       f64,
-    pub drop:       f64,
-    pub exit:       f64,
-    pub in_bounds:  bool,
+    pub peak: f64,
+    pub drop: f64,
+    pub exit: f64,
 }
 
 pub struct ServiceStateRecord {
-    pub state_id: u32,
     pub order_id: i32,
+    pub state_id: u32,
 }
 
 pub struct WeightBoundsRecord {
-    pub min:      f64,
-    pub max:      f64,
-    pub desired:  f64,
-    pub trigger:  f64,
+    pub min:     f64,
+    pub max:     f64,
+    pub desired: f64,
+    pub trigger: f64,
 }
 
 pub struct OrderRecord {

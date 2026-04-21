@@ -91,8 +91,8 @@ app.layout = [
             dcc.Tabs([
                 dcc.Tab(label="Live", children=[
                     dcc.Dropdown(
-                        options=[],
-                        value="ff01",
+                        options=[m.upper() for m in supported_machines],
+                        value="FF01",
                         id="machine-selection",
                         searchable=False,
                         clearable=False,
@@ -108,26 +108,31 @@ app.layout = [
                     ),
                     dcc.Tabs([
                         dcc.Tab(label="Aufträge", children=[
-                            #  dcc.Dropdown(
-                            #      value=None,
-                            #      id="order-selection",
-                            #      searchable=True,
-                            #      clearable=False,
-                            #  ),
+                            dcc.Dropdown(
+                                options=[
+                                    "55534",
+                                    "56743",
+                                    "12345",
+                                ],
+                                value="55534",
+                                id="order-selection",
+                                searchable=True,
+                                clearable=False,
+                            ),
                         ]),
                         dcc.Tab(label="Tage", children=[
-                            # dcc.Dropdown(
-                            #     options=[
-                            #         {"label": "16/04/26", "value": "20260416"},
-                            #         {"label": "17/04/26", "value": "20260417"},
-                            #         {"label": "18/04/26", "value": "20260418"},
-                            #     ],
-                            #     value="20260416",
-                            #     id="day-selection",
-                            #     searchable=True,
-                            #     clearable=False,
-                            #     placeholder="Suche"
-                            # ),
+                            dcc.Dropdown(
+                                options=[
+                                    {"label": "16/04/26", "value": "20260416"},
+                                    {"label": "17/04/26", "value": "20260417"},
+                                    {"label": "18/04/26", "value": "20260418"},
+                                ],
+                                value="20260416",
+                                id="day-selection",
+                                searchable=True,
+                                clearable=False,
+                                placeholder="Suche"
+                            ),
                         ])
                     ], id="archive-tabs")
                 ]),
@@ -202,6 +207,26 @@ def mode_change_data(active_index: int, size: int = 4):
 # )
 # def update_graph_order(order_id):
 #     fig = fig_default
+#     return fig
+
+# @callback(
+#     Output('live-graph', 'figure'),
+#     Input('upload-data', 'contents'),
+#     State('upload-data', 'filename'),
+# )
+# def update_graph_live(data, name):
+#     if data == None:
+#         return fig_default
+# 
+#     content_type, content_string = data.split(',')
+# 
+#     decoded = base64.b64decode(content_string)
+# 
+#     file_stream = io.BytesIO(decoded)
+# 
+#     fig = open_chart(file_stream)
+#     fig.update_layout(fig_layout)
+# 
 #     return fig
 
 

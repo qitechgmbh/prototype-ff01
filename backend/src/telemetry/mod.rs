@@ -13,6 +13,8 @@ pub use types::OrderRecord;
 pub use types::LogLevel;
 pub use types::RecordType;
 
+mod binary;
+// mod utils;
 mod server;
 mod worker;
 mod live_data;
@@ -35,12 +37,11 @@ pub fn record_weight(record: WeightRecord) {
 
 pub fn record_plate(record: PlateRecord) {
     let data = format!(
-        "{}, {:.1}, {:.1}, {:.1}, {}\n", 
+        "{}, {:.1}, {:.1}, {:.1}\n", 
         get_timestamp(), 
         record.peak,
         record.drop,
         record.exit,
-        record.in_bounds,
     );
 
     send(RecordType::Plate, data);

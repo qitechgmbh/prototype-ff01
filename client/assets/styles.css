@@ -40,12 +40,17 @@
 }
 
 body {
+    /*
     margin-top:   20px;
     margin-left:  20px;
     margin-right: 20px;
     padding: 0;
-    height: 100vw;
+    height: 100%;
     width:  100vh;
+
+    background: var(--ctp-base);
+    color: var(--ctp-blue);
+    */
 
     background: var(--ctp-base);
     color: var(--ctp-blue);
@@ -81,9 +86,9 @@ h1 {
 }
 
 #app-root {
-    position: absolute;
+    position: fixed;
     top:   30px;
-    left: 30px;
+    right: 30px;
 
     display: flex;
     flex-direction: column;

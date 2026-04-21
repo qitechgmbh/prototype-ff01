@@ -124,7 +124,7 @@ impl App {
             let exit = wt;
             let in_bounds = bounds.min <= peak && peak <= bounds.max;
 
-            telemetry::record_plate(PlateRecord { peak, drop, exit, in_bounds });
+            // telemetry::record_plate(PlateRecord { peak, drop, exit, in_bounds });
 
             self.plate_count += 1;
         }

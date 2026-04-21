@@ -45,7 +45,7 @@ def init(files, fig, last_ts):
             # label
             fig.add_annotation(
                 x=mid,
-                y=0.5,
+                y=1,
                 text=f"Order {order_id}",
                 showarrow=False,
                 yref="paper",  # relative to full chart height
