@@ -21,8 +21,8 @@ REQUIRED_FILES = {
     "weights.csv",
 }
 
-def open_chart(path):
-    files = extract_files(path)
+def open_chart(file_stream):
+    files = extract_files(file_stream)
 
     columns = [
         "time",
@@ -58,16 +58,14 @@ def open_chart(path):
     #     hovermode="x unified"
     # )
 
-    print(fig)
-
     return fig
     # fig.show(config = {'scrollZoom': True})
 
 
-def extract_files(path):
+def extract_files(file_stream):
     file_buffers = {}
 
-    with zipfile.ZipFile(path, "r") as z:
+    with zipfile.ZipFile(file_stream, "r") as z:
         zip_files = set(z.namelist())
 
         missing = REQUIRED_FILES - zip_files

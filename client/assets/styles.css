@@ -60,7 +60,6 @@ h1 {
     color: var(--ctp-blue);
     font-family: 'JetBrains Mono';
     background: var(--ctp-mantle);
-    padding: 12px 20px;
 }
 
 #upload-data:hover {
@@ -77,11 +76,15 @@ h1 {
     color: var(--ctp-blue);
     font-family: 'JetBrains Mono';
     background: rgba(0, 0, 0, 0);
+
+    padding: 12px 20px;
 }
 
 #app-root {
-    position: relative;
-    
+    position: absolute;
+    top:   30px;
+    left: 30px;
+
     display: flex;
     flex-direction: column;
     width: 400px;
@@ -89,7 +92,7 @@ h1 {
     z-index: 999;
 }
 
-#graph-content {
+.dash-graph {
     position: fixed;
     top: 0;
     left: 0;
@@ -197,29 +200,3 @@ h1 {
 .dash-options-list-option:not(:has(input[disabled])):focus-within {
     color: var(--ctp-sapphire);
 }
-
-/*
-.app-root {
-    padding: 0px;
-
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    gap: 20px;
-}
-
-#graph {
-    flex: 1;
-    min-height: 0;
-}
-
-#dropdown-selection {
-    color: #cad3f5;
-    background-color: #363a4f;
-}
-
-#dropdown-selection .dash-dropdown-content {
-    color: #cad3f5;
-    background-color: #363a4f;
-}
-*/
