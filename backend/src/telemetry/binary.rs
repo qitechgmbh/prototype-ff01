@@ -1,62 +1,152 @@
-use std::fs::File;
+use std::{fs::File, io::{self, Write}, path::PathBuf, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 
-use heapless::Vec;
+use serde::{Deserialize, Serialize};
 
-const _: () = assert!(std::mem::size_of::<WeightRecord>() == 6);
+pub const BATCH_DURATION: Duration = Duration::from_secs(60 * 60 * 24);
+pub const MAX_SAMPLES: usize = 12 * 60 * 6;
 
-#[repr(packed)]
-#[derive(Clone, Copy)]
-pub struct WeightRecord {
-    pub weight_0:     u16,
-    pub weight_1:     u16,
-    pub weight_total: u16, // 0.0..600.0 -> || 0..6000
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BatchReadCursor {
+    weights: u32,
 }
 
-#[repr(packed)]
+#[derive(Debug)]
+pub struct Batch {
+    prev_id: Option<u64>,
+    created: SystemTime,
+    weights: WeightRecords,
+    weights2: WeightRecords,
+    // plates:  Vec<PlateRecord,  MAX_SAMPLES>,
+    // bounds:  Vec<BoundsRecord, MAX_SAMPLES>,
+    // states:  Vec<StateRecord,  MAX_SAMPLES>,
+    // orders:  Vec<OrderRecord,  MAX_SAMPLES>,
+    // logs:    Vec<LogRecord,    MAX_SAMPLES>,
+}
+
+impl Batch {
+    pub fn new(now: SystemTime, prev_id: Option<u64>) -> Self {
+        Self { prev_id: prev_id, created: now, weights: WeightRecords::default() }
+    }
+
+    pub fn created(&self) -> SystemTime {
+        self.created
+    }
+    
+    pub fn secs_since_ue(&self) -> u64 {
+        self.created.duration_since(UNIX_EPOCH).unwrap().as_secs()
+    }
+
+    pub fn append(&mut self, now: SystemTime, request: AppendRequest) {
+        let elapsed = now.duration_since(self.created).unwrap().as_millis() as u16;
+
+        match request {
+            AppendRequest::WeightRecord(w0, w1) => {
+                self.weights.dt.push(elapsed).expect("Should never be full");
+                self.weights.w0.push((w0 * 10.0) as u16).expect("Should never be full");
+                self.weights.w1.push((w1 * 10.0) as u16).expect("Should never be full");
+            },
+        }
+    }
+
+    pub fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        // 1. created timestamp (you must define how you get unix time)
+        let created_unix: u128 = 
+            self.created.duration_since(UNIX_EPOCH).unwrap().as_millis();
+
+        writer.write_all(&created_unix.to_le_bytes())?;
+
+        // 2. number of samples
+        let len = self.weights.dt.len() as u16;
+        writer.write_all(&len.to_le_bytes())?;
+
+        // 3. columnar data (raw memory copy)
+        let dt = bytemuck::cast_slice(&self.weights.dt);
+        let w0 = bytemuck::cast_slice(&self.weights.w0);
+        let w1 = bytemuck::cast_slice(&self.weights.w1);
+
+        writer.write_all(dt)?;
+        writer.write_all(w0)?;
+        writer.write_all(w1)?;
+
+        Ok(())
+    }
+
+    pub fn append_weight(&mut self, now: SystemTime, w0: f64, w1: f64) {
+        let elapsed = now.duration_since(self.created).unwrap().as_millis() as u16;
+        self.weights.dt.push(elapsed).expect("Should never be full");
+        self.weights.w0.push((w0 * 10.0) as u16).expect("Should never be full");
+        self.weights.w1.push((w1 * 10.0) as u16).expect("Should never be full");
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WeightRecords {
+    pub dt: heapless::Vec<u16, MAX_SAMPLES>,
+    pub w0: heapless::Vec<u16, MAX_SAMPLES>,
+    pub w1: heapless::Vec<u16, MAX_SAMPLES>,
+}
+
+impl WeightRecords {
+    pub fn append(&mut self, dt: SystemTime, w0: f64, w1: f64) {
+        self.dt.push(elapsed).expect("Should never be full");
+        self.w0.push((w0 * 10.0) as u16).expect("Should never be full");
+        self.w1.push((w1 * 10.0) as u16).expect("Should never be full");
+    }
+}
+
+#[derive(Clone)]
+pub enum AppendRequest {
+    WeightRecord(f64, f64),
+}
+
+
+
+#[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct PlateRecord {
+    pub dt:   u16,
     pub peak: u16,
-    pub drop: u16,
+    pub avg:  u16,
     pub exit: u16,
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct BoundsRecord {
+    pub dt:      u16,
     pub min:     u16,
     pub max:     u16,
     pub desired: u16,
     pub trigger: u16,
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct StateRecord {
     pub order_id: u32,
     pub state_id: u32,
 }
 
-#[repr(packed)]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct OrderRecord {
     pub order_id:         u32,
-    pub personnel_id_buf: [u8; 20],
-    pub personnel_id_len: u8,
+    pub personnel_id_buf: heapless::String<20>,
     pub quantity_scrap:   u16,
     pub quantity_good:    u16,
-    pub time_start:       u64,
-    pub time_end:         u64,
-    pub duration:         u64, // seconds
+    pub time_start:       heapless::String<10>,
+    pub time_end:         heapless::String<10>,
+    pub duration:         u64,
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct LogRecord {
     pub level: LogLevel,
-    pub message_buf: [u8; 96],
+    pub message_buf: [u8; 128],
     pub message_len: usize,
 }
 
+#[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum LogLevel {
     Debug,
@@ -65,179 +155,51 @@ pub enum LogLevel {
     Error,
 }
 
-pub fn encode_blob() {
-
-}
-
-pub const SAMPLE_RATE: f64 = 12.0;
-
-const fn compute_limit(samples_per_minute_max: f64) -> usize {
-    (samples_per_minute_max * 60.0 * 24.0 * 7.0) as usize
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct TelemetryBlob {
-    pub weights_buf: [WeightRecord; compute_limit(SAMPLE_RATE * 60.0)],
-    pub weights_len: u32,
-    pub plates_buf:  [PlateRecord; compute_limit(3.0 * 60.0)],
-    pub plates_len:  u32,
-    pub bounds_buf:  [BoundsRecord; compute_limit(1.0)],
-    pub bounds_len:  u32,
-    pub states_buf:  [StateRecord; compute_limit(1.0)],
-    pub states_len:  u32,
-    pub orders_buf:  [OrderRecord; compute_limit(1.0)],
-    pub orders_len:  u32,
-    pub logs_buf:    [LogRecord; compute_limit(60.0)],
-    pub logs_len:    u32,
-}
-
-use bytemuck::cast_slice;
-
-pub const WEIGHTS_LEN_MAX: usize = compute_limit(SAMPLE_RATE * 60.0);
-pub const PLATES_LEN_MAX:  usize = compute_limit(3.0 * 60.0);
-pub const BOUNDS_LEN_MAX:  usize = compute_limit(1.0);
-pub const STATES_LEN_MAX:  usize = compute_limit(1.0);
-pub const ORDERS_LEN_MAX:  usize = compute_limit(1.0);
-pub const LOGS_LEN_MAX:    usize = compute_limit(60.0);
-
-unsafe impl bytemuck::Pod for WeightRecord {}
-unsafe impl bytemuck::Pod for PlateRecord {}
-unsafe impl bytemuck::Pod for BoundsRecord {}
-unsafe impl bytemuck::Pod for StateRecord {}
-unsafe impl bytemuck::Pod for OrderRecord {}
-unsafe impl bytemuck::Pod for LogRecord {}
-
-#[derive(Debug)]
-pub struct TelemetryData {
-    pub weights: Vec<WeightRecord, WEIGHTS_LEN_MAX>,
-    pub plates:  Vec<PlateRecord,  PLATES_LEN_MAX>,
-    pub bounds:  Vec<BoundsRecord, BOUNDS_LEN_MAX>,
-    pub states:  Vec<StateRecord,  STATES_LEN_MAX>,
-    pub orders:  Vec<OrderRecord,  ORDERS_LEN_MAX>,
-    pub logs:    Vec<LogRecord,    LOGS_LEN_MAX>,
-}
-
-#[repr(C)]
-struct TelemetryHeader {
-    magic:   u32,
-    version: u32,
-}
-
-impl TelemetryData {
-    pub fn encode<W: Write>(&self, writer: &mut W) -> Result<()> {
-        // weights
-        writer.write_all(&(self.weights.len() as u32).to_le_bytes())?;
-        writer.write_all(cast_slice(&self.weights))?;
-
-        // plates
-        writer.write_all(&(self.plates.len() as u32).to_le_bytes())?;
-        writer.write_all(cast_slice(&self.plates))?;
-
-        // bounds
-        writer.write_all(&(self.bounds.len() as u32).to_le_bytes())?;
-        writer.write_all(cast_slice(&self.bounds))?;
-
-        // states
-        writer.write_all(&(self.states.len() as u32).to_le_bytes())?;
-        writer.write_all(cast_slice(&self.states))?;
-
-        // orders
-        writer.write_all(&(self.orders.len() as u32).to_le_bytes())?;
-        writer.write_all(cast_slice(&self.orders))?;
-
-        // logs
-        writer.write_all(&(self.logs.len() as u32).to_le_bytes())?;
-        writer.write_all(cast_slice(&self.logs))?;
-
-        Ok(())
+impl std::fmt::Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LogLevel::Info  => write!(f, "INFO"),
+            LogLevel::Warn  => write!(f, "WARN"),
+            LogLevel::Error => write!(f, "ERROR"),
+        }
     }
+}
+
+fn app_dir() -> PathBuf {
+    let base = dirs::home_dir().expect("no home directory");
+    let path = base.join("telemetry");
+    std::fs::create_dir_all(&path).unwrap();
+    path
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::telemetry::archiving;
+
     use super::*;
-    use std::io::Cursor;
+    use std::{io::Cursor, path::PathBuf, thread::sleep};
 
     #[test]
     pub fn my_test() {
-        let mut data = TelemetryData {
-            weights: heapless::Vec::new(),
-            plates: heapless::Vec::new(),
-            bounds: heapless::Vec::new(),
-            states: heapless::Vec::new(),
-            orders: heapless::Vec::new(),
-            logs: heapless::Vec::new(),
-        };
+        let mut batch = Batch::new(SystemTime::now());
 
-        // -------------------------
-        // Fill with sample data
-        // -------------------------
-        data.weights.push(WeightRecord {
-            weight_0: 10,
-            weight_1: 20,
-            weight_total: 30,
-        }).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+        batch.append(SystemTime::now(), AppendRequest::WeightRecord(0.0, 0.0));
 
-        data.plates.push(PlateRecord {
-            peak: 1,
-            drop: 2,
-            exit: 3,
-        }).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+        batch.append(SystemTime::now(), AppendRequest::WeightRecord(1.0, 3.0));
 
-        data.bounds.push(BoundsRecord {
-            min: 1,
-            max: 2,
-            desired: 3,
-            trigger: 4,
-        }).unwrap();
+        // ---- write into in-memory buffer ----
+        let mut buf = Cursor::new(Vec::<u8>::new());
 
-        data.states.push(StateRecord {
-            order_id: 0,
-            state_id: 0,
-        });
+        batch.write(&mut buf).unwrap();
 
-        data.orders.push(OrderRecord {
-            order_id: 0,
-            personnel_id_buf: [0u8; 20],
-            personnel_id_len: 0,
-            quantity_scrap: 0,
-            quantity_good: 0,
-            time_start: 0,
-            time_end: 0,
-            duration: 0,
-        });
+        // ---- get raw bytes ----
+        let bytes = buf.into_inner();
 
-        data.logs.push(LogRecord {
-            level: LogLevel::Debug,
-            message_buf: [0u8; 96],
-            message_len: 0,
-        });
+        // ---- print result ----
+        println!("batch bytes: {:?}", bytes);
 
-        // -------------------------
-        // Encode into memory buffer
-        // -------------------------
-        let mut buffer = Cursor::new(Vec::new());
-        data.encode(&mut buffer).unwrap();
-
-        let encoded_bytes = buffer.into_inner();
-
-        // -------------------------
-        // Decode back
-        // -------------------------
-        let decoded = TelemetryData::decode(&encoded_bytes).unwrap();
-
-        // -------------------------
-        // Assertions
-        // -------------------------
-        assert_eq!(decoded.weights.len(), data.weights.len());
-        assert_eq!(decoded.plates.len(), data.plates.len());
-        assert_eq!(decoded.bounds.len(), data.bounds.len());
-        assert_eq!(decoded.states.len(), data.states.len());
-        assert_eq!(decoded.orders.len(), data.orders.len());
-        assert_eq!(decoded.logs.len(), data.logs.len());
-
-        assert_eq!(decoded.weights[0].weight_total, 30);
-        assert_eq!(decoded.plates[0].peak, 1);
+        archiving::save_batch(app_dir(), &batch).expect("Success");
     }
 }

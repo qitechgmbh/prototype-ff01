@@ -1,27 +1,28 @@
 use std::env;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicU64;
 
+use arc_swap::ArcSwap;
 use crossbeam::channel::Sender;
 
-mod types;
-pub use types::WeightRecord;
-pub use types::PlateRecord;
-pub use types::ServiceStateRecord;
-pub use types::WeightBoundsRecord;
-pub use types::OrderRecord;
-pub use types::LogLevel;
-pub use types::RecordType;
+use crate::telemetry::binary::Batch;
 
+mod tcp_handler;
+mod request;
+mod archiving;
 mod binary;
-// mod utils;
-mod server;
 mod worker;
-mod live_data;
 
 type Payload = (RecordType, String);
 
 static HANDLE: OnceLock<(Sender<Payload>, Sender<Payload>)> = OnceLock::new();
+
+#[derive(Debug)]
+pub struct Shared {
+    pub batch_id_current: AtomicU64,
+    pub batch_snapshot: ArcSwap<Batch>,
+}
 
 pub fn record_weight(record: WeightRecord) {
     let data = format!(
@@ -150,6 +151,8 @@ pub fn init() {
 
     std::thread::spawn(move || live_data::run(rx1));
 }
+
+
 
 fn get_timestamp() -> String {
     let now = chrono::Local::now();

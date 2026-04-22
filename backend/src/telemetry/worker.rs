@@ -1,75 +1,64 @@
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{fs::File, path::PathBuf, ptr::null, thread, time::{Duration, SystemTime}};
 
-use chrono::Timelike;
-use crossbeam::channel::Receiver;
+use crossbeam::channel::{Receiver, TryRecvError};
 
-use crate::telemetry::{Payload, RecordType, types::Files};
+use crate::telemetry::{RecordType, archiving::save_batch, binary::Batch, request::RecordRequest, types::Files};
 
-pub fn run(exe_dir: PathBuf, root_dir: PathBuf, rx: Receiver<Payload>) {
-    let tmp_dir = exe_dir.join("tmp-telemetry");
+pub fn run(exe_dir: PathBuf, root_dir: PathBuf, rx: Receiver<RecordRequest>) {
+    let home = dirs::home_dir().expect("no home directory");
 
-    let mut last_date = chrono::Local::now();
-    let mut files     = Some(Files::new(&tmp_dir));
+    let archive_dir = home.join("telemetry");
+    std::fs::create_dir_all(&archive_dir).unwrap();
+
+    let mut batch = Box::new(Batch::new(SystemTime::now(), None));
 
     loop {
-        let (r_type, data) = rx.recv()
-            .expect("Channels should exist for the lifetime of the program");
+        let now = SystemTime::now();
 
-        let current_date = chrono::Local::now();
+        // replace batch every 5 minutes
+        if now.duration_since(batch.created()).unwrap() >= Duration::from_secs(60 * 5) {
+            let old_batch = std::mem::replace(
+                &mut batch,
+                Box::new(Batch::new(now, None)),
+            );
 
-        let snapshot_complete = 
-            last_date.date_naive() != current_date.date_naive() 
-            || last_date.hour() != current_date.hour();
+            let dir = archive_dir.clone();
 
-        last_date = current_date;
-
-        if snapshot_complete {
-            // date changed, create new entry
-            let snapshot_id = format!("{:02}", current_date.hour());
-            let datestamp   = current_date.format("%Y%m%d").to_string();
-            let archive_dir = PathBuf::from(root_dir.join(datestamp).join(snapshot_id));
-
-            // drop files to avoid potential problems when moving the files
-            _ = files.take(); // drop current files
-            submit_entry(&tmp_dir, &archive_dir);
-            files = Some(Files::new(&tmp_dir));
+            thread::spawn(move || {
+                let batch = old_batch;
+                save_batch(dir, &batch);
+            });
         }
 
-        let files = &mut files.as_mut().expect("Should be None only during transfers");
-        let file  = select_file(r_type, files);
-        
-        file.write_all(data.as_bytes()).expect("Failed to write");
+        loop {
+            match rx.try_recv() {
+                Ok(request) => handle_request(request, now, &mut *batch),
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    panic!("MainThread Channel Disconnected");
+                }
+            }
+        }
+
+        // live request
+        // batch request
+        // metadata request
+
+
+
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
-fn select_file(r_type: RecordType, files: &mut Files) -> &mut File {
-    use RecordType::*;
-    match r_type {
-        Weight => &mut files.weights,
-        Plate  => &mut files.plates,
-        State  => &mut files.states,
-        Bounds => &mut files.bounds,
-        Order  => &mut files.orders,
-        Log    => &mut files.logs,
+fn handle_request(request: RecordRequest, now: SystemTime, batch: &mut Batch, ) {
+    use RecordRequest::*;
+
+    match request {
+        Weight { w0, w1 } => batch.append_weight(now, w0, w1),
+        Plate { peak, avg, exit } => todo!(),
+        Bounds { min, max, desired, trigger } => todo!(),
+        State { order_id, state_id } => todo!(),
+        Order(record_order_request) => todo!(),
+        Log(log_level, _) => todo!(),
     }
-}
-
-/// move measurements from temp to archive dir
-fn submit_entry(tmp_dir: &PathBuf, archive_dir: &PathBuf) {
-    use std::fs::{create_dir_all};
-    create_dir_all(archive_dir).expect("create archive dir failed");
-    rename(tmp_dir, archive_dir, "weights.csv");
-    rename(tmp_dir, archive_dir, "plates.csv");
-    rename(tmp_dir, archive_dir, "states.csv");
-    rename(tmp_dir, archive_dir, "bounds.csv");
-    rename(tmp_dir, archive_dir, "orders.csv");
-    rename(tmp_dir, archive_dir, "logs.csv");
-}
-
-fn rename(tmp_dir: &PathBuf, archive_dir: &PathBuf, sub_path: &str) {
-    use std::fs;
-    let from = tmp_dir.join(sub_path);
-    let to   = archive_dir.join(sub_path);
-    let err  = &format!("Failed moving {}", sub_path);
-    fs::rename(from, to).expect(err);
 }

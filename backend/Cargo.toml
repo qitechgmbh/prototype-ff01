@@ -17,3 +17,7 @@ beas_bsl   = { git = "https://github.com/qitechgmbh/beas-bsl.git", rev = "224ddd
 bytemuck = "1.25.0"
 
 heapless = "0.7.17"
+
+dirs = "5"
+
+arc-swap = "1.9.1"
