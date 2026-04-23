@@ -14,7 +14,6 @@ REQUIRED_FILES = {
     "weights.csv",
 }
 
-
 def deconstruct_and_save(zip_path, output_dir, name):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -253,4 +252,4 @@ def extract_orders(tmp_dir):
     return result
 
 
-deconstruct_and_save("/home/entity/telemetry/Archive.zip", "/home/entity/qitech/telemetry", "20260420");
+deconstruct_and_save("/home/entity/work/info/20260422/Archive.zip", "/home/entity/work/info", "20260422");

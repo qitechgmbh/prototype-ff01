@@ -14,7 +14,7 @@ pub use types::Config;
 mod worker;
 use worker::Worker;
 
-use crate::telemetry::{self, LogLevel, ServiceStateRecord};
+use crate::telemetry::{self, LogLevel};
 
 #[derive(Debug)]
 pub struct Service {
@@ -122,10 +122,7 @@ impl Service {
             State::Two(state) => state.state_one.entry.doc_entry,
         };
 
-        telemetry::record_state(ServiceStateRecord {
-            state_id: state.index(),
-            order_id: order_id,
-        });
+        telemetry::record_state(order_id as u32, state.index());
 
         self.state = state;
     }

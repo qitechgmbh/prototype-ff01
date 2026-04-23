@@ -21,6 +21,9 @@ def init_df(file_obj, name, columns):
 
 
 def extend(df, last_ts):
+    if df.empty:
+        return df
+
     # Copy last bounds row
     last_row = df.iloc[-1].copy()
 

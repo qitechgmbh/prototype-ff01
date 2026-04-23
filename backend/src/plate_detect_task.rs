@@ -5,6 +5,8 @@ pub struct PlateDetectTask {
     pub seen_rise: bool,
 }
 
+// was below trigger -> above trigger -> 
+
 impl PlateDetectTask {
     pub fn new(trigger: f64) -> Self {
         Self {

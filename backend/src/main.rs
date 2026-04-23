@@ -1,11 +1,6 @@
 use std::{f64::NAN, time::{Duration, Instant}};
 
 mod telemetry;
-use telemetry::LogLevel;
-use telemetry::WeightBoundsRecord;
-use telemetry::PlateRecord ;
-use telemetry::WeightRecord;
-
 mod xtrem;
 
 mod scales;
@@ -17,6 +12,8 @@ use service::State;
 
 mod plate_detect_task;
 use plate_detect_task::PlateDetectTask;
+
+use crate::telemetry::{ArchiveManagerConfig, LogLevel, ServerConfig, WriterConfig};
 
 pub struct App {
     // state
@@ -41,24 +38,20 @@ impl App {
         let wt = {
             let mut complete: bool = true;
             if self.scales.weight_0().is_none() {
-                telemetry::log(LogLevel::Error, format!("Weight 0 is None!"));
+                telemetry::log(LogLevel::Error, "Weight 0 is None!".into());
                 complete = false;
             }
 
             if self.scales.weight_1().is_none() {
-                telemetry::log(LogLevel::Error, format!("Weight 1 is None!"));
+                telemetry::log(LogLevel::Error, "Weight 1 is None!".into());
                 complete = false;
             }
 
-            let w0 = self.scales.weight_0().unwrap_or(NAN);
-            let w1 = self.scales.weight_1().unwrap_or(NAN);
+            let w0 = self.scales.weight_0().unwrap_or(0.0);
+            let w1 = self.scales.weight_1().unwrap_or(0.0);
             let wt = w0 + w1;
 
-            telemetry::record_weight(WeightRecord {
-                weight_0:     w0,
-                weight_1:     w1,
-                weight_total: wt,
-            });
+            telemetry::record_weight(w0, w1);
 
             if !complete {
                 return;
@@ -71,7 +64,6 @@ impl App {
 
         if let Err(e) = self.service.update(now, self.plate_count) {
             let msg = format!("Error while updating service: {}", e);
-            println!("{}", msg);
             telemetry::log(LogLevel::Error, msg);
             return;
         }
@@ -84,12 +76,7 @@ impl App {
 
             if self.service.state().index() == 0 {
                 // record order
-                telemetry::record_bounds(WeightBoundsRecord {
-                    min:     0.0,
-                    max:     0.0,
-                    desired: 0.0,
-                    trigger: 0.0,
-                });
+                telemetry::record_bounds(0.0, 0.0, 0.0, 0.0);
             } else if let State::One(state) = self.service.state() {
                 let entry = &state.entry;
 
@@ -102,12 +89,12 @@ impl App {
                 self.task = Some(PlateDetectTask::new(trigger));
 
                 // record order
-                telemetry::record_bounds(WeightBoundsRecord {
-                    min:     entry.weight_bounds.min,
-                    max:     entry.weight_bounds.max,
-                    desired: entry.weight_bounds.desired,
-                    trigger: trigger,
-                });
+                telemetry::record_bounds(
+                    entry.weight_bounds.min, 
+                    entry.weight_bounds.max, 
+                    entry.weight_bounds.desired, 
+                    trigger,
+                );
             }
         }
 
@@ -119,12 +106,15 @@ impl App {
         let task  = self.task.as_mut().expect("Initialized when entering state");
 
         if let Some((peak, drop)) = task.check(wt) {
+            _= drop;
+
             let bounds = &entry.weight_bounds;
 
-            let exit = wt;
             let in_bounds = bounds.min <= peak && peak <= bounds.max;
+            _ = in_bounds; // print warning
 
             // telemetry::record_plate(PlateRecord { peak, drop, exit, in_bounds });
+            telemetry::record_plate(peak, peak);
 
             self.plate_count += 1;
         }
@@ -160,14 +150,20 @@ impl App {
 }
 
 fn main() {
-    telemetry::init();
+    let telemetry_config = telemetry::Config {
+        writer: WriterConfig {
+            cycle_time: Duration::from_secs(5),
+        },
+        server: ServerConfig {
+            port: 9000,
+        },
+        archive: ArchiveManagerConfig {
+            archive_dir: "/home/entity/sandbox/ff01/machine/telemetry".into(),
+            tiers:      vec![0, 2, 2],
+        },
+    };
 
-    telemetry::record_bounds(WeightBoundsRecord {
-        min:      0.0,
-        max:      0.0,
-        desired:  0.0,
-        trigger:  0.0,
-    });
+    telemetry::init(telemetry_config);
 
     // config
     let config = service::Config {

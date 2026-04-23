@@ -1,6 +1,6 @@
 use beas_bsl::{Client, api::{Date, Time, time_receipt}};
 
-use crate::{service::State, telemetry::{self, LogLevel, OrderRecord}};
+use crate::{service::State, telemetry::{self, LogLevel}};
 
 use super::StateOne;
 
@@ -39,17 +39,17 @@ pub fn get_next_state(
 
     let duration = from_time.compute_duration(to_time);
 
-    telemetry::record_order(OrderRecord {
-        id: doc_entry,
-        personel_id: personnel_id.clone(),
-        quantity_scrap,
-        quantity_good,
-        start_date,
-        from_time,
-        end_date,
-        to_time,
-        duration,
-    });
+    // telemetry::record_order(OrderRecord {
+    //     id: doc_entry,
+    //     personel_id: personnel_id.clone(),
+    //     quantity_scrap,
+    //     quantity_good,
+    //     start_date,
+    //     from_time,
+    //     end_date,
+    //     to_time,
+    //     duration,
+    // });
 
     let request = time_receipt::post::Request {
         doc_entry:          doc_entry,
