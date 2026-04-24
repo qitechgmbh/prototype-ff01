@@ -116,9 +116,9 @@ pub fn log(level: LogLevel, message: String) {
 }
 
 fn send(r_type: RecordType, data: String) {
-    let (worker_tx, live_data_tx) = HANDLE.get().expect("Failed to retrieve handle");
+    let (worker_tx, _) = HANDLE.get().expect("Failed to retrieve handle");
     worker_tx.send((r_type, data.clone())).expect("worker channel is full");
-    live_data_tx.send((r_type, data)).expect("live data channel is full");
+    // live_data_tx.send((r_type, data)).expect("live data channel is full");
 }
 
 #[allow(deprecated)]
