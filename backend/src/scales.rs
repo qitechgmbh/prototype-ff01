@@ -36,14 +36,6 @@ impl Scales {
         let (weight_0, weight_1) = collect_data(&self.sock_rx);
         self.weight_0 = weight_0;
         self.weight_1 = weight_1;
-
-        if weight_0 == None {
-            println!("scale no.0 is not reachable!");
-        }
-
-        if weight_1 == None {
-            println!("scale no.1 is not reachable!");
-        }
     }
 
     pub fn weight_0(&self) -> Option<f64> {
