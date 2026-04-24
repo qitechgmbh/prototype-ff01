@@ -60,7 +60,6 @@ impl Service {
         &self.state
     }
 
-
     pub fn update(&mut self, now: Instant, plate_count: u32) -> anyhow::Result<()> {
         if !self.enabled {
             self.set_state(State::Zero);
@@ -73,10 +72,10 @@ impl Service {
         };
         
         let result = if connection.has_pending() {
-            self.send_next(now, &mut connection)
-        } else {
-            self.recv_and_process(now, &mut connection, plate_count);
+            self.send_next(now, &mut connection, plate_count);
             Ok(())
+        } else {
+            self.recv_and_process(now, &mut connection)
         };
 
         self.connection = Some(connection);
@@ -158,7 +157,7 @@ impl Service {
         Ok(Some(connection))
     }
 
-    fn send_next(&mut self, now: Instant, connection: &mut Connection) -> anyhow::Result<()> {
+    fn recv_and_process(&mut self, now: Instant, connection: &mut Connection) -> anyhow::Result<()> {
         let Some(response) = connection.recv() else {
             if now.duration_since(self.last_recv_ts) > self.config.timeout_duration {
                 telemetry::log(
@@ -199,7 +198,7 @@ impl Service {
         }
     }
 
-    fn recv_and_process(&mut self, now: Instant, connection: &mut Connection, plate_count: u32) {
+    fn send_next(&mut self, now: Instant, connection: &mut Connection, plate_count: u32) {
         if now.duration_since(self.last_send_ts) < self.config.send_delay {
             return;
         }

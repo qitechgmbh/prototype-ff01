@@ -87,7 +87,7 @@ fn get_next_entry(client: &Client) -> anyhow::Result<Option<Entry>> {
     Ok(Some(entry))
 }
 
-fn get_workorder_routing(client: &Client) -> anyhow::Result<Option<WorkorderRouting>> {
+pub fn get_workorder_routing(client: &Client) -> anyhow::Result<Option<WorkorderRouting>> {
     let filter = FilterBuilder::new()
         .equals("CurrentRunning", true)
         .and()

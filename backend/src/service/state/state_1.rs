@@ -6,7 +6,7 @@ use beas_bsl::{
     api::{ Date, FilterBuilder, QueryOptions, Time, TimeReceipt },
 };
 
-use crate::{service::state::StateTwo, telemetry::{self, LogLevel}};
+use crate::{service::state::{StateTwo, state_0}, telemetry::{self, LogLevel}};
 
 use super::super::types::Entry;
 use super::State;
@@ -19,6 +19,14 @@ pub struct StateOne {
 }
 
 pub fn get_next_state(client: &Client, state: StateOne) -> anyhow::Result<State> {
+    if let Some(wo_routing) = state_0::get_workorder_routing(client)? {
+        // A new order is now running and this one still has no timereceipt
+        // assume it was started by accident
+        if wo_routing.doc_entry != state.entry.doc_entry {
+            return state_0::get_next_state(client);
+        }
+    }
+
     let maybe_submission = get_worker_submission(
         client, 
         state.entry.doc_entry, 
