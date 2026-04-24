@@ -1,8 +1,12 @@
+mod format;
+
+/*
 use std::{io, sync::Arc, thread};
 
 use arc_swap::ArcSwap;
 use crossbeam::channel::Sender;
 
+mod format;
 mod types;
 // mod stitcher;
 
@@ -52,3 +56,5 @@ pub(crate) struct Shared<const N: usize, Body: FragmentBody<N>> {
     pub fragment_snapshot: ArcSwap<Option<Fragment<N, Body>>>,
     pub tier_registry:     ArcSwap<TierRegistry>
 }
+
+    */
