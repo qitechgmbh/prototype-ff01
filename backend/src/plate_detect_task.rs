@@ -1,8 +1,8 @@
 #[derive(Debug, Clone)]
 pub struct PlateDetectTask {
-    pub peak:    Option<f64>,
-    pub trigger: f64,
-    pub seen_rise: bool,
+    pub peak:      Option<f64>,
+    pub post_peak: Option<f64>,
+    pub trigger:   f64,
 }
 
 impl PlateDetectTask {
@@ -10,9 +10,11 @@ impl PlateDetectTask {
         Self {
             trigger,
             peak: None,
-            seen_rise: false,
+            post_peak: None,
         }
     }
+
+    /// avg sampling
 
     pub fn check(&mut self, weight: f64) -> Option<(f64, f64)> {
         let trigger = self.trigger;
@@ -27,27 +29,33 @@ impl PlateDetectTask {
 
         // Rising phase → update peak
         if weight > current_peak {
-            self.seen_rise = true;
-            self.peak = Some(weight);
+            self.peak      = Some(weight);
+            self.post_peak = None;
             return None;
         }
 
-        // must rise first
-        if !self.seen_rise {
+        let Some(post_peak) = self.post_peak else {
+            self.post_peak = Some(weight);
+            return None;
+        };
+
+        // weight must go below trigger
+        if weight > trigger {
             return None;
         }
 
         // Compute drop from peak
         let drop = current_peak - weight;
 
-        // needs to drop to 1/3 of trigger
-        if drop < trigger * 0.33 {
+        // needs to drop by 50% of trigger
+        if drop < trigger * 0.5 {
             return None;
         }
 
-        self.peak = None;
-        self.seen_rise = false;
+        let avg = (current_peak + post_peak) / 2.0;
 
-        return Some((current_peak, drop));
+        self.peak = None;
+
+        return Some((current_peak, avg));
     }
 }

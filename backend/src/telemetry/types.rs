@@ -12,6 +12,7 @@ pub enum RecordType {
     Log,
 }
 
+/*
 impl RecordType {
     pub fn to_str(self) -> &'static str {
         use RecordType::*;
@@ -25,6 +26,7 @@ impl RecordType {
         }
     }
 }
+    */
 
 pub struct WeightRecord {
     pub weight_0:     f64,
@@ -34,6 +36,7 @@ pub struct WeightRecord {
 
 pub struct PlateRecord {
     pub peak:       f64,
+    pub avg:        f64,
     pub drop:       f64,
     pub exit:       f64,
     pub in_bounds:  bool,

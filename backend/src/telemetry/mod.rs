@@ -15,7 +15,6 @@ pub use types::RecordType;
 
 mod server;
 mod worker;
-mod live_data;
 
 type Payload = (RecordType, String);
 
@@ -35,9 +34,10 @@ pub fn record_weight(record: WeightRecord) {
 
 pub fn record_plate(record: PlateRecord) {
     let data = format!(
-        "{}, {:.1}, {:.1}, {:.1}, {}\n", 
+        "{}, {:.1}, {:.1}, {:.1}, {:.1}, {}\n", 
         get_timestamp(), 
         record.peak,
+        record.avg,
         record.drop,
         record.exit,
         record.in_bounds,
@@ -125,6 +125,7 @@ fn send(r_type: RecordType, data: String) {
 pub fn init() {
     let (tx0, rx0) = crossbeam::channel::unbounded();
     let (tx1, rx1) = crossbeam::channel::unbounded();
+    _ = rx1;
 
     let exe_path: PathBuf = env::current_exe().expect("Requires exe path");
     let exe_dir = exe_path
@@ -147,7 +148,7 @@ pub fn init() {
         move || server::run(archive_root_dir)
     });
 
-    std::thread::spawn(move || live_data::run(rx1));
+    // std::thread::spawn(move || live_data::run(rx1));
 }
 
 fn get_timestamp() -> String {

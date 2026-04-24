@@ -118,13 +118,15 @@ impl App {
         let entry = &state.entry;
         let task  = self.task.as_mut().expect("Initialized when entering state");
 
-        if let Some((peak, drop)) = task.check(wt) {
+        if let Some((peak, avg)) = task.check(wt) {
             let bounds = &entry.weight_bounds;
 
             let exit = wt;
             let in_bounds = bounds.min <= peak && peak <= bounds.max;
 
-            telemetry::record_plate(PlateRecord { peak, drop, exit, in_bounds });
+            let drop = peak - exit;
+
+            telemetry::record_plate(PlateRecord { peak, avg, drop, exit, in_bounds });
 
             self.plate_count += 1;
         }

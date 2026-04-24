@@ -57,9 +57,11 @@ fn get_worker_submission(
             continue;
         };
 
+        /* 
         if quantity_scrap == 0.0 {
             continue;
         }
+        */
 
         let Some(personnel_id) = time_receipt.personnel_id else {
             continue;
