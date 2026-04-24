@@ -3,19 +3,23 @@ use std::{fs::{File, OpenOptions}, io::{self, Read, Seek, SeekFrom}, path::PathB
 use crate::telemetry::binary::{ArchiveHeader, Fragment, FragmentHeader, checksum};
 
 pub struct ArchiveWriter {
-    file: File,
-    path: PathBuf,
-    header: ArchiveHeader,
+    file:      File,
+    tmp_path:  PathBuf, 
+    out_path:  PathBuf, 
+    header:    ArchiveHeader,
 }
 
 impl ArchiveWriter {
-    pub fn create(path: PathBuf, magic: u64, version: u16) -> io::Result<Self> {
-        let path = path.with_extension("tmp");
-
+    pub fn create(
+        tmp_path: PathBuf, 
+        out_path: PathBuf, 
+        magic: u64, version: u16
+    ) -> io::Result<Self> {
         let mut file = OpenOptions::new()
+            .read(true)
             .write(true)
             .create_new(true)
-            .open(&path)?;
+            .open(&tmp_path)?;
 
         let header = ArchiveHeader {
             magic,
@@ -28,7 +32,8 @@ impl ArchiveWriter {
 
         Ok(Self {
             file,
-            path,
+            tmp_path,
+            out_path,
             header,
         })
     }
@@ -84,18 +89,18 @@ impl ArchiveWriter {
         Ok(())
     }
 
-    pub fn finalize(self) -> io::Result<PathBuf> {
-        let path = self.path.clone();
+    pub fn finalize(self) -> io::Result<()> {
+        let tmp_path = self.tmp_path.clone();
         match self.finalize_inner() {
-            Ok(v) => Ok(v),
+            Ok(_) => Ok(()),
             Err(e) => {
-                let _ = std::fs::remove_file(&path);
+                let _ = std::fs::remove_file(&tmp_path);
                 Err(e)
             }
         }
     }
 
-    fn finalize_inner(mut self) -> io::Result<PathBuf> {
+    fn finalize_inner(mut self) -> io::Result<()> {
         // --- rewrite header ---
         self.file.seek(SeekFrom::Start(0))?;
         self.header.encode(&mut self.file)?;
@@ -104,10 +109,8 @@ impl ArchiveWriter {
         self.file.sync_all()?;
 
         // --- atomic rename ---
-        let final_path = self.path.with_extension("qta");
+        std::fs::rename(&self.tmp_path, &self.out_path)?;
 
-        std::fs::rename(&self.path, &final_path)?;
-
-        Ok(final_path)
+        Ok(())
     }
 }

@@ -46,6 +46,8 @@ impl Writer {
                     Box::new(DataFragment::new(segment_ts)),
                 );
 
+                println!("Fragment complete: {:?}", segment_ts);
+
                 let segment_tx = self.segement_tx.clone();
                 thread::spawn(move || {
                     // let thread block until channel is open

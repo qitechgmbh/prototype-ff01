@@ -1,26 +1,33 @@
-use std::{fs::{File, create_dir_all}, io, path::PathBuf, sync::Arc};
+use std::{fs::create_dir_all, io, path::PathBuf, sync::Arc};
 
 use crossbeam::channel::Receiver;
 
-use crate::telemetry::{Shared, binary::{self, ArchiveReader, ArchiveWriter, MAGIC, VERSION}, segment::DataFragment};
+use crate::telemetry::{
+    Shared, 
+    archive_manager::types::{SubRegistryGuard}, 
+    binary::{self, ArchiveReader}, 
+    segment::DataFragment
+};
 
-mod types;
-pub use types::ArchiveRegistry;
+// mod types;
+// pub use types::ArchiveRegistry;
+// pub use types::ArchiveTier;
+
+mod archive_registry;
+mod fragment_registry;
 
 #[derive(Debug)]
 pub struct Config {
     pub archive_dir: PathBuf,
-    pub tiers:       Vec<u16>,
+    pub tiers:       Vec<ArchiveTier>,
 }
 
 #[derive(Debug)]
 pub struct ArchiveManager {
-    config:     Config,
     shared:     Arc<Shared>,
     segment_rx: Receiver<Box<DataFragment>>,
     registry:   ArchiveRegistry,
-    tiers:      Vec<(PathBuf, u16)>,
-    orphan_dir: PathBuf,
+    tmp_dir:    PathBuf,
 }
 
 impl ArchiveManager {
@@ -29,80 +36,71 @@ impl ArchiveManager {
         shared: Arc<Shared>, 
         segment_rx: Receiver<Box<DataFragment>>
     ) -> Result<Self, io::Error> {
-        create_dir_all(&config.archive_dir)?;
-
-        let orphan_dir = config.archive_dir.join("orphans");
-        println!("Creating {:?}", &orphan_dir);
-        create_dir_all(&orphan_dir)?;
-
-        let mut tiers: Vec<(PathBuf, u16)> = Vec::new();
-
-        let level0_dir = config.archive_dir.join("tier_0");
-        println!("Creating {:?}", &level0_dir);
-        create_dir_all(&level0_dir)?;
-        tiers.push((level0_dir, 0));
-
-        let mut i: u16 = 1;
-        for tier_capacity in &config.tiers {
-            let extension = format!("tier_{}", i);
-            let dir = config.archive_dir.join(extension);
-            println!("Creating {:?}", &dir);
-            create_dir_all(&dir)?;
-            tiers.push((dir, *tier_capacity));
-            i += 1;
+        if config.tiers.len() == 0 {
+            panic!("Requires atleast one tier");
         }
 
-        let tier_count = config.tiers.len();
+        let registry = ArchiveRegistry::new(&config.archive_dir, &config.tiers);
 
         Ok(Self { 
-            config, 
             shared, 
             segment_rx, 
-            orphan_dir, 
-            tiers,
-            registry: ArchiveRegistry::new(tier_count),
+            registry,
+            tmp_dir: config.archive_dir.join("tmp")
         })
     }
 
-    pub fn run(mut self) {
-        _ = self.config;
+    pub fn run(mut self) -> io::Result<()> {
         _ = self.shared;
-        _ = self.orphan_dir;
-        _ = self.tiers;
 
         loop {
             match self.segment_rx.recv() {
                 Ok(segment) => {
-                    self.flush_segment(segment);
+                    println!("Received fragment");
+                    self.flush_fragment(segment)?;
                     self.sync_registry();
-                    self.try_shrink_to_level(1);
+                    self.promote_all()?;
                 }
 
                 Err(_) => {
-                    break; // channel closed → shutdown cleanly
+                    return Ok(()); // channel closed → shutdown cleanly
                 }
             }
         }
     }
 
-    pub fn flush_segment(&mut self, fragment: Box<DataFragment>) {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+    pub fn flush_fragment(&mut self, fragment: Box<DataFragment>) -> io::Result<()> {
+        let tier = self.registry.tier_0_mut();
 
-        let name = format!("{}.qts", secs);
-        let path = self.tier_0().0.join(name);
+        let (entry, removed_entries) = tier.registry.register(&fragment);
 
-        let mut archive = binary::ArchiveWriter::create(path, binary::MAGIC, binary::VERSION).unwrap();
-        archive.write_fragment(&*fragment).unwrap();
-        archive.finalize().unwrap();
+        let guard = SubRegistryGuard::new(&mut tier.registry);
 
-        self.registry.tier_0_mut().push((secs, 0, 0));
-    }
+        let tmp_path = self.tmp_dir.join("segment.tmp");
+        let out_path = entry.path.clone();
 
-    fn tier_0(&self) -> &(PathBuf, u16) {
-        self.tiers.get(0).expect("Must be present")
+        create_dir_all(out_path.parent().unwrap())?;
+        create_dir_all(tmp_path.parent().unwrap())?;
+
+        let mut archive = binary::ArchiveWriter::create(
+            tmp_path,
+            out_path,
+            binary::MAGIC, 
+            binary::VERSION
+        )?;
+
+        archive.write_fragment(&*fragment)?;
+        archive.finalize()?;
+
+        // success → commit
+        guard.commit();
+
+        // successfully commited. Delete overflow entries
+        for entry in removed_entries {
+            _ = std::fs::remove_file(entry.path);
+        }
+
+        Ok(())
     }
 
     fn sync_registry(&mut self) {
@@ -110,40 +108,48 @@ impl ArchiveManager {
         self.shared.segment_registry.store(Arc::new(registry));
     }
 
-    fn try_shrink_to_level(&mut self, tier_idx: usize) {
-        println!("SHRINKING");
-
-        let Some(registry) = self.registry.tiers.get(tier_idx) else { return; };
-
-        let tier = &self.tiers[tier_idx];
-        if registry.len() < tier.1 as usize {
-            return;
-        }
-
-        let tmp_dir = self.config.archive_dir.join("tmp");
-        create_dir_all(&tmp_dir).unwrap();
-
-        let tmp_path = tmp_dir.join(format!(
-            "merge_{}.qts",
+    fn promote_all(&mut self) -> io::Result<()>  {
+        let timestamp = 
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_millis()
-        ));
+                .as_millis();
 
-        let mut writer = ArchiveWriter::create(tmp_path, MAGIC, VERSION).unwrap();
+        for (i, tier) in self.registry.tiers.iter().enumerate() {
+            println!("Goal: {:?} | {:?}", tier, i);
 
-        for (ts, _, _) in registry.iter() {
-            let file_path = tier.0.join(format!("{}.qts", ts));
-
-            let mut reader = ArchiveReader::open(&file_path).unwrap();
-
-            loop {
-                let Some(fragment) = reader.next::<DataFragment>().unwrap() else { break; };
-                writer.write_fragment(&fragment).unwrap();
+            if !tier.can_promote() {
+                return Ok(());
             }
+
+            let first = tier.registry.get_by_index(0).expect("Must have atleast one");
+
+            let tmp_path = self.tmp_dir.join("merge.tmp");
+            let out_path = tier.registry.path_of(0);
+            create_dir_all(&out_path.parent().unwrap())?;
+            create_dir_all(&tmp_path.parent().unwrap())?;
+
+            let mut archive = binary::ArchiveWriter::create(
+                tmp_path,
+                out_path,
+                binary::MAGIC, 
+                binary::VERSION
+            )?;
+
+            for entry in tier.registry.iter() {
+                let file_path = tier.registry.path_of(entry.uid);
+
+                let mut reader = ArchiveReader::open(&file_path)?;
+
+                loop {
+                    let Some(fragment) = reader.next::<DataFragment>()? else { break; };
+                    archive.write_fragment(&fragment)?;
+                }
+            }
+
+            archive.finalize()?;
         }
 
-        writer.finalize().unwrap();
+        Ok(())
     }
 }

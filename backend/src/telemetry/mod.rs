@@ -64,6 +64,7 @@ pub fn init(config: Config) {
         .expect("Failed to init archive manager");
     std::thread::spawn(move || archive_mgr.run());
 
+    
 
     let server = Server::new(config.server, shared.clone())
         .expect("Failed to create server");

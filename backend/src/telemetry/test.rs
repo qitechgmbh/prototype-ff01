@@ -2,7 +2,7 @@
 mod test {
     use std::time::Duration;
 
-    use crate::telemetry::{self, ArchiveManagerConfig, ServerConfig, WriterConfig};
+    use crate::telemetry::{self, ArchiveManagerConfig, ServerConfig, WriterConfig, archive_manager::ArchiveTier};
 
     #[test]
     pub fn my_test() {
@@ -15,7 +15,11 @@ mod test {
             },
             archive: ArchiveManagerConfig {
                 archive_dir: "/home/entity/sandbox/ff01/machine/telemetry".into(),
-                tiers:      vec![0, 2, 2],
+                tiers: vec![
+                    ArchiveTier { triggger: 5, capacity: 15 },
+                    ArchiveTier { triggger: 5, capacity: 15 },
+                    ArchiveTier { triggger: 5, capacity: 15 },
+                ],
             },
         };
 
