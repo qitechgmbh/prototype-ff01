@@ -72,10 +72,10 @@ impl Service {
         };
         
         let result = if connection.has_pending() {
+            self.recv_and_process(now, &mut connection)
+        } else {
             self.send_next(now, &mut connection, plate_count);
             Ok(())
-        } else {
-            self.recv_and_process(now, &mut connection)
         };
 
         self.connection = Some(connection);
