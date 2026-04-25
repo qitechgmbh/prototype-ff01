@@ -252,4 +252,4 @@ def extract_orders(tmp_dir):
     return result
 
 
-deconstruct_and_save("/home/entity/work/info/20260422/Archive.zip", "/home/entity/work/info", "20260422");
+deconstruct_and_save("/home/entity/telemetry/20260424/Archive.zip", "/home/entity/work/info", "20260424");

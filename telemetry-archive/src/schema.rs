@@ -8,7 +8,7 @@ pub struct FragmentSchema {
 }
 
 impl FragmentSchema {
-    pub fn deserialize(input: &str) -> FragmentSchema {
+    pub const fn deserialize(input: &str) -> FragmentSchema {
         let mut schema = FragmentSchema {
             tables: heapless::Vec::new(),
         };
@@ -111,11 +111,15 @@ impl ColumnType {
 
 #[cfg(test)]
 mod tests {
-    use crate::import_schema;
+    use crate::{FragmentSchema, import_schema};
+
+    const SCHEMA: FragmentSchema = import_schema!("/home/entity/work/qitech/prototype-ff01/schemas/telemetry.ini");
 
     #[test]
     fn parse_static_schema() {
-        let schema = import_schema!("/home/entity/work/qitech/prototype-ff01/schemas/telemetry.ini");
+        // let schema = import_schema!("/home/entity/work/qitech/prototype-ff01/schemas/telemetry.ini");
+
+        let schema = SCHEMA;
 
         println!("schema: {:?}", schema);
 

@@ -5,7 +5,9 @@ pub use schema::ColumnSchema;
 
 mod tier_registry;
 mod fragment_registry;
-mod manager;
+// mod manager;
+mod fragment;
+mod archive;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ArchiveTier {
