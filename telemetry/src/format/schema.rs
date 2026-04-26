@@ -2,18 +2,20 @@ pub const NAME_LEN_MAX: usize = 128;
 pub const TABLES_LEN_MAX: usize = 16;
 pub const COLUMNS_LEN_MAX: usize = 32;
 
+
+
 #[derive(Debug, Clone)]
-pub struct Schema {
-    pub tables: heapless::Vec<Table, TABLES_LEN_MAX>,
+pub struct FragmentSchema {
+    pub tables: heapless::Vec<TableSchema, TABLES_LEN_MAX>,
 }
 
-impl Schema {
-    pub fn deserialize(input: &str) -> Schema {
-        let mut schema = Schema {
+impl FragmentSchema {
+    pub fn deserialize(input: &str) -> FragmentSchema {
+        let mut schema = FragmentSchema {
             tables: heapless::Vec::new(),
         };
 
-        let mut current: Option<Table> = None;
+        let mut current: Option<TableSchema> = None;
 
         for line in input.lines() {
             let line = line.trim();
@@ -31,7 +33,7 @@ impl Schema {
 
                 let name = &line[1..line.len() - 1];
 
-                let mut table = Table {
+                let mut table = TableSchema {
                     name: heapless::String::new(),
                     columns: heapless::Vec::new(),
                 };
@@ -48,7 +50,7 @@ impl Schema {
                 let mut name = heapless::String::new();
                 name.push_str(key.trim()).unwrap();
 
-                table.columns.push(Column {
+                table.columns.push(ColumnSchema {
                     name,
                     r#type: ColumnType::deserialize(ty.trim()),
                 }).unwrap();
@@ -65,13 +67,13 @@ impl Schema {
 }
 
 #[derive(Debug, Clone)]
-pub struct Table {
+pub struct TableSchema {
     pub name: heapless::String<NAME_LEN_MAX>,
-    pub columns: heapless::Vec<Column, COLUMNS_LEN_MAX>,
+    pub columns: heapless::Vec<ColumnSchema, COLUMNS_LEN_MAX>,
 }
 
 #[derive(Debug, Clone)]
-pub struct Column {
+pub struct ColumnSchema {
     pub name: heapless::String<NAME_LEN_MAX>,
     pub r#type: ColumnType,
 }

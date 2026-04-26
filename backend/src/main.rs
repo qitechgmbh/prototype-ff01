@@ -1,5 +1,6 @@
 use std::{f64::NAN, time::{Duration, Instant}};
 
+mod telemetry_2;
 mod telemetry;
 mod xtrem;
 

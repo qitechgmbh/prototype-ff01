@@ -1,13 +1,7 @@
 // mod fragment;
 mod schema;
-pub use schema::Schema;
+pub use schema::FragmentSchema;
+pub use schema::TableSchema;
+pub use schema::ColumnSchema;
 
-mod fragment;
-
-#[macro_export]
-macro_rules! import_schema {
-    ($path:expr) => {{
-        const INPUT: &str = include_str!($path);
-        $crate::format::Schema::deserialize(INPUT)
-    }};
-}
+// mod fragment;

@@ -1,4 +1,43 @@
 mod format;
+pub use format::FragmentSchema;
+pub use format::TableSchema;
+pub use format::ColumnSchema;
+
+pub trait Fragment<'a> {
+    const SCHEMA: FragmentSchema;
+
+    fn tables(&self) -> &[&'a dyn TableDyn];
+}
+
+pub trait Table {
+    type Item;
+    const SCHEMA: TableSchema;
+
+    fn append(&mut self, ts: u64, item: Self::Item);
+}
+
+pub trait TableDyn {
+    fn schema(&self) -> &'static TableSchema;
+    fn columns(&self) -> &[Column];
+}
+
+#[derive(Debug, Clone)]
+pub enum Column<'a> {
+    Unsigned8(&'a [u8]),
+    Unsigned16(&'a [u16]),
+    Unsigned32(&'a [u32]),
+    Unsigned64(&'a [u64]),
+
+    Signed8(&'a [i8]),
+    Signed16(&'a [i16]),
+    Signed32(&'a [i32]),
+    Signed64(&'a [i64]),
+
+    Float32(&'a [f32]),
+    Float64(&'a [f64]),
+
+    String(&'a [String]),
+}
 
 /*
 use std::{io, sync::Arc, thread};

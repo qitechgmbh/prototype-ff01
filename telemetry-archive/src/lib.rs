@@ -1,24 +1,27 @@
 mod schema;
 pub use schema::FragmentSchema;
-pub use schema::TableSchema;
 pub use schema::ColumnSchema;
+pub use schema::TableSchema;
+pub use schema::ColumnType;
 
-mod tier_registry;
-mod fragment_registry;
-// mod manager;
-mod fragment;
+mod types;
+pub use types::Table;
+pub use types::TableDyn;
+pub use types::Column;
+pub use types::StringColumn;
+
 mod archive;
+pub use archive::ArchiveTier;
+pub use archive::ArchiveHeader;
+pub use archive::Archive;
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ArchiveTier {
-    pub capacity_desired: usize,
-    pub capacity_max: usize,
-}
+mod fragment;
+pub use fragment::FragmentHeader;
+pub use fragment::Fragment;
 
-#[macro_export]
-macro_rules! import_schema {
-    ($path:expr) => {{
-        const INPUT: &str = include_str!($path);
-        $crate::FragmentSchema::deserialize(INPUT)
-    }};
-}
+mod io;
+
+mod manager;
+
+pub const MAGIC:   u32 = 0xB00B135;
+pub const VERSION: u32 = 0001_1001;
