@@ -1,0 +1,29 @@
+[package]
+name = "telemetry_system"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# schema_derive = { path = "../schema_derive" }
+
+chrono     = "0.4.44"
+serde      = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+crossbeam  = "0.8.4"
+zip        = { version = "=7.2.0", default-features = false, features = ["deflate"] }
+walkdir    = "2.5.0"
+
+bytemuck = "1.25.0"
+
+heapless = "0.7.17"
+
+dirs = "5"
+zstd = "0.13"
+arc-swap = "1.9.1"
+twox-hash = "2"
+soa_derive="0.14.0"
+
+parquet="58.1.0"
+arrow="58.1.0"
+
+crc32fast="1.5.0"
