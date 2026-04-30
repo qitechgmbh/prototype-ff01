@@ -1121,19 +1121,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "telemetry-journal"
-version = "0.1.0"
-dependencies = [
- "arrow",
- "chrono",
- "crossbeam",
- "flate2",
- "parquet",
- "tar",
- "telemetry-core",
-]
-
-[[package]]
 name = "thrift"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

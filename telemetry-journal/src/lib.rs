@@ -1,59 +1,119 @@
-use std::io::Write;
-use std::io::{self, Read};
+use std::io::{self, BufWriter, Seek, SeekFrom, Write};
+use std::{fs::{self, File, OpenOptions}, path::PathBuf, time::{Duration, Instant}};
 
-mod events;
-pub use events::Event;
-pub use events::WeightEvent;
-pub use events::PlateEvent;
-pub use events::OrderEvent;
-pub use events::LogEvent;
-pub use events::LogCategory;
+use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use crossbeam::channel::{Receiver, RecvTimeoutError};
+
+use telemetry_core::Entry;
 
 mod archive;
 pub use archive::scan_and_process;
 
-pub mod journal;
-
-#[derive(Debug)]
-pub struct WalEntry {
-    pub timestamp: u64,
-    pub event:     Event,
+pub struct Config {
+    pub dir_logs: PathBuf,
+    pub dir_archive: PathBuf,
+    pub flush_interval: Duration,
+    pub initial_date: Option<DateTime<Local>>,
 }
 
-impl WalEntry {
-    pub fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let mut buf = [0u8; 256];
-        let event = self.event.encode(&mut buf);
-        let len = &[(event.len() + size_of::<u64>()) as u8];
-        let ts = &self.timestamp.to_le_bytes();
+pub fn run(
+    config: Config, 
+    rx: Receiver<Entry>,
+) -> io::Result<()> {
+    let dir_days   = config.dir_archive.join("days");
+    let dir_orders = config.dir_archive.join("orders");
+    fs::create_dir_all(&dir_days)?;
+    fs::create_dir_all(&dir_orders)?;
 
-        writer.write_all(len)?;
-        writer.write_all(ts)?;
-        writer.write_all(event)?;
+    let mut date_now = config.initial_date.unwrap_or(Local::now()).date_naive();
+    let mut wal_file = open_wal(&config.dir_logs, date_now)?;
+    let mut flush_prev_ts = Instant::now();
 
-        Ok(())
+    loop {
+        let result = rx.recv_timeout(config.flush_interval / 8);
+
+        if let Err(RecvTimeoutError::Disconnected) = &result {
+            // log as INFO
+            println!("channel closed, shutting down journal worker");
+            wal_file.flush()?;
+            wal_file.get_ref().sync_all()?;
+            return Ok(());
+        }
+
+        if let Ok(entry) = result {
+            let entry_date = Local::timestamp_opt(
+                &Local,
+                entry.timestamp as i64 / 1_000_000, 
+                0
+            ).unwrap().date_naive();
+
+            // rollover check
+            if entry_date != date_now {
+                wal_file.flush()?;
+                wal_file.get_ref().sync_all()?;
+
+                date_now = entry_date;
+                wal_file = open_wal(&config.dir_logs, date_now)?;
+
+                let config = archive::Config {
+                    dir_logs: config.dir_logs.clone(),
+                    dir_days: dir_days.clone(),
+                    date_now,
+                    thread_pool_size: 2,
+                };
+
+                archive::scan_and_process(config)?;
+            }
+
+            entry.write(&mut wal_file)?;
+        }
+
+        if flush_prev_ts.elapsed() >= config.flush_interval {
+            wal_file.flush()?;
+            wal_file.get_ref().sync_all()?;
+            flush_prev_ts = Instant::now();
+        }
     }
+}
 
-    pub fn read<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
-        use io::ErrorKind;
+fn open_wal(
+    logs_dir: &PathBuf,
+    date: NaiveDate,
+) -> io::Result<BufWriter<File>> {
+    let file_name = format!("{}.wal", date.format("%Y%m%d"));
+    let path = logs_dir.join(file_name);
 
-        let mut buf_len  = [0u8; 1];
-        match reader.read_exact(&mut buf_len) {
-            Ok(v) => v,
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
+    fs::create_dir_all(path.parent().unwrap())?;
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&path)?;
+
+    let mut pos: u64 = 0;
+
+    loop {
+        let start = file.stream_position()?;
+
+        match Entry::read(&mut file) {
+            Ok(Some(_)) => {
+                pos = file.stream_position()?;
+            }
+            Ok(None) => break,
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
+                println!("WAL corruption detected at offset {}", start);
+                file.set_len(start)?;
+                file.sync_all()?;
+                pos = start;
+                break;
+            }
             Err(e) => return Err(e),
-        };
-        let len = u8::from_le_bytes(buf_len);
-
-        let mut buf_ts = [0u8; 8];
-        reader.read_exact(&mut buf_ts)?;
-        let timestamp = u64::from_le_bytes(buf_ts);
-
-        let mut event_buf = [0u8; 256];
-        let event_len = len as usize - size_of::<u64>();
-        reader.read_exact(&mut event_buf[0..event_len])?;
-        let event = Event::decode(&event_buf)?;
-
-        Ok(Some(WalEntry { timestamp, event }))
+        }
     }
+
+    // move to end for appending
+    file.seek(SeekFrom::Start(pos))?;
+
+    Ok(BufWriter::new(file))
 }

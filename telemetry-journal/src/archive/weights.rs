@@ -6,7 +6,7 @@ use arrow::{
 };
 use parquet::arrow::ArrowWriter;
 
-use crate::WeightEvent;
+use telemetry_core::WeightEvent;
 
 #[derive(Debug, Default)]
 pub struct WeightsArchive {

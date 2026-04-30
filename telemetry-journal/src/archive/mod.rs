@@ -5,7 +5,7 @@ use crossbeam::queue::SegQueue;
 use flate2::{Compression, write::GzEncoder};
 use tar::Builder;
 
-use crate::{WalEntry, Event};
+use telemetry_core::{Entry, Event};
 
 mod weights;
 pub use weights::WeightsArchive;
@@ -162,7 +162,7 @@ fn replay_and_extract(
     let mut logs    = LogsArchive::default();
 
     loop {
-        let entry = match WalEntry::read(&mut file) {
+        let entry = match Entry::read(&mut file) {
             Ok(opt_v) => match opt_v {
                 Some(v) => v,
                 None => break,

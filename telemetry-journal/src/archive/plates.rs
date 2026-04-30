@@ -6,7 +6,7 @@ use arrow::{
 };
 use parquet::arrow::ArrowWriter;
 
-use crate::PlateEvent;
+use telemetry_core::PlateEvent;
 
 #[derive(Debug, Default)]
 pub struct PlatesArchive {

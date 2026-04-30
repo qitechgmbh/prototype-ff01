@@ -6,7 +6,7 @@ use arrow::{
 };
 use parquet::arrow::ArrowWriter;
 
-use crate::LogEvent;
+use telemetry_core::LogEvent;
 
 #[derive(Debug, Default)]
 pub struct LogsArchive {

@@ -19,7 +19,7 @@ use arrow::{
     }
 };
 
-use crate::{OrderEvent};
+use telemetry_core::OrderEvent;
 
 #[derive(Debug, Default)]
 pub struct OrdersArchive {

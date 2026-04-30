@@ -2,7 +2,7 @@ use std::{fs::{self, File}, io, path::PathBuf, thread, time::Duration};
 
 use chrono::{Local, TimeZone};
 use crossbeam::channel;
-use telemetry_journal::{Event, LogCategory, LogEvent, OrderEvent, PlateEvent, WalEntry, WeightEvent, journal};
+use telemetry_core::{Entry, Event, LogCategory, LogEvent, OrderEvent, PlateEvent, WeightEvent};
 
 #[test]
 fn test_roundtrip() -> io::Result<()> {
@@ -11,7 +11,7 @@ fn test_roundtrip() -> io::Result<()> {
 
     let dt_base = Local.with_ymd_and_hms(2026, 04, 20, 0, 0, 0).unwrap();
 
-    let journal_config = journal::Config {
+    let journal_config = telemetry_journal::Config {
         dir_logs:       root_dir.join("logs"),
         dir_archive:    root_dir.join("archive"),
         flush_interval: Duration::from_micros(1000),
@@ -21,7 +21,7 @@ fn test_roundtrip() -> io::Result<()> {
     let (tx, rx) = channel::bounded(512);
     
     _ = thread::spawn(move || {
-        if let Err(e) = journal::run(journal_config, rx) {
+        if let Err(e) = telemetry_journal::run(journal_config, rx) {
             println!("Thread exited with status: {:?}", e);
         }
     });
@@ -31,7 +31,7 @@ fn test_roundtrip() -> io::Result<()> {
 
         let ts = dt_next.timestamp_micros() as u64;
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Weight(WeightEvent {
                 weight_0: Some(1),
@@ -40,7 +40,7 @@ fn test_roundtrip() -> io::Result<()> {
         };
         _ = tx.send(entry);
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Plate(PlateEvent {
                 peak: 100,
@@ -49,7 +49,7 @@ fn test_roundtrip() -> io::Result<()> {
         };
         _ = tx.send(entry);
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Order(OrderEvent {
                 started:     false,
@@ -60,7 +60,7 @@ fn test_roundtrip() -> io::Result<()> {
         };
         _ = tx.send(entry);
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Log(LogEvent {
                 category: LogCategory::Debug,
@@ -76,7 +76,7 @@ fn test_roundtrip() -> io::Result<()> {
     let mut file = File::open(path).unwrap();
 
     loop {
-        let entry = match WalEntry::read(&mut file) {
+        let entry = match Entry::read(&mut file) {
             Ok(opt_v) => match opt_v {
                 Some(v) => v,
                 None => break,

@@ -2,7 +2,7 @@ use std::{fs, io, path::PathBuf, thread, time::Duration};
 
 use chrono::{Local, TimeZone};
 use crossbeam::channel;
-use telemetry_journal::{Event, LogCategory, LogEvent, OrderEvent, PlateEvent, WalEntry, WeightEvent, journal};
+use telemetry_core::{Event, LogCategory, LogEvent, OrderEvent, PlateEvent, Entry, WeightEvent};
 
 #[test]
 fn test_rollover() -> io::Result<()> {
@@ -16,7 +16,7 @@ fn test_rollover() -> io::Result<()> {
         .with_ymd_and_hms(2026, 4, 20, 23, 59, 60 - OFFSET_PRE)
         .unwrap();
 
-    let journal_config = journal::Config {
+    let journal_config = telemetry_journal::Config {
         dir_logs:       root_dir.join("logs"),
         dir_archive:    root_dir.join("archive"),
         flush_interval: Duration::from_micros(1000),
@@ -26,7 +26,7 @@ fn test_rollover() -> io::Result<()> {
     let (tx, rx) = channel::bounded(512);
     
     _ = thread::spawn(move || {
-        if let Err(e) = journal::run(journal_config, rx) {
+        if let Err(e) = telemetry_journal::run(journal_config, rx) {
             println!("Thread exited with status: {:?}", e);
         }
     });
@@ -37,7 +37,7 @@ fn test_rollover() -> io::Result<()> {
         println!("now: {}", dt_next);
         let ts = dt_next.timestamp_micros() as u64;
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Weight(WeightEvent {
                 weight_0: Some(100),
@@ -46,7 +46,7 @@ fn test_rollover() -> io::Result<()> {
         };
         _ = tx.send(entry);
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Plate(PlateEvent {
                 peak: 100,
@@ -55,7 +55,7 @@ fn test_rollover() -> io::Result<()> {
         };
         _ = tx.send(entry);
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Order(OrderEvent {
                 started:     false,
@@ -66,7 +66,7 @@ fn test_rollover() -> io::Result<()> {
         };
         _ = tx.send(entry);
 
-        let entry = WalEntry {
+        let entry = Entry {
             timestamp: ts,
             event: Event::Log(LogEvent {
                 category: LogCategory::Debug,
