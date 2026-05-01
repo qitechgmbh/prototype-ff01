@@ -1,6 +1,4 @@
 mod weights;
-use std::io;
-
 pub use weights::WeightEvent;
 
 mod plate;
@@ -12,6 +10,8 @@ pub use order::OrderEvent;
 mod log;
 pub use log::LogEvent;
 pub use log::LogCategory;
+
+use crate::EntryDecodeError;
 
 #[derive(Debug)]
 pub enum Event {
@@ -27,6 +27,7 @@ impl Event {
     const ORDER_TAG:  u8 = 2;
     const LOG_TAG:    u8 = 3;
 
+    //TODO: maybe add bounds checks?
     pub fn encode<'a>(&self, out: &'a mut [u8]) -> &'a [u8] {
         let len = match self {
             Event::Weight(event) => {
@@ -50,7 +51,7 @@ impl Event {
         &out[0..1 + len]
     }
 
-    pub fn decode(data: &[u8]) -> io::Result<Self> {
+    pub fn decode(data: &[u8]) -> Result<Self, EntryDecodeError> {
         match data[0] {
             Self::WEIGHT_TAG => {
                 let event = WeightEvent::decode(&data[1..])?;
@@ -68,7 +69,7 @@ impl Event {
                 let event = LogEvent::decode(&data[1..])?;
                 Ok(Event::Log(event))
             }
-            _ => Err(io::Error::new(io::ErrorKind::InvalidData, "invalid tag")),
+            _ => Err(EntryDecodeError::UnknownTag),
         }
     }
 }

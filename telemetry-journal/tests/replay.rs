@@ -7,7 +7,10 @@ use telemetry_core::{Entry, Event, LogCategory, LogEvent, OrderEvent, PlateEvent
 #[test]
 fn test_roundtrip() -> io::Result<()> {
     let root_dir: PathBuf = "sandbox/telemetry".into();
-    fs::remove_dir_all(&root_dir)?;
+    
+    if root_dir.exists() {
+        fs::remove_dir_all(&root_dir)?;
+    }
 
     let dt_base = Local.with_ymd_and_hms(2026, 04, 20, 0, 0, 0).unwrap();
 

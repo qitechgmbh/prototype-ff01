@@ -1,4 +1,4 @@
-use std::io;
+use crate::EntryDecodeError;
 
 #[derive(Debug)]
 pub struct WeightEvent {
@@ -37,12 +37,9 @@ impl WeightEvent {
         &out[..idx]
     }
 
-    pub fn decode(data: &[u8]) -> io::Result<Self> {
+    pub fn decode(data: &[u8]) -> Result<Self, EntryDecodeError> {
         if data.len() < 1 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "buffer too small",
-            ));
+            return Err(EntryDecodeError::DataIncomplete);
         }
 
         let flags = data[0];
@@ -50,10 +47,7 @@ impl WeightEvent {
 
         let weight_0 = if flags & Self::WEIGHT_0_PRESENT != 0 {
             if data.len() < idx + 2 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "missing weight_0",
-                ));
+                return Err(EntryDecodeError::DataIncomplete);
             }
 
             let v = i16::from_le_bytes(data[idx..idx + 2].try_into().unwrap());
@@ -65,10 +59,7 @@ impl WeightEvent {
 
         let weight_1 = if flags & Self::WEIGHT_1_PRESENT != 0 {
             if data.len() < idx + 2 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "missing weight_1",
-                ));
+                return Err(EntryDecodeError::DataIncomplete);
             }
 
             let v = i16::from_le_bytes(data[idx..idx + 2].try_into().unwrap());

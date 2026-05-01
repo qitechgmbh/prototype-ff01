@@ -1,4 +1,4 @@
-use std::io;
+use crate::EntryDecodeError;
 
 #[derive(Debug)]
 pub struct OrderEvent {
@@ -42,12 +42,9 @@ impl OrderEvent {
         &out[..idx]
     }
 
-    pub fn decode(data: &[u8]) -> io::Result<Self> {
+    pub fn decode(data: &[u8]) -> Result<Self, EntryDecodeError> {
         if data.len() < 6 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "buffer too small",
-            ));
+            return Err(EntryDecodeError::DataIncomplete);
         }
 
         let flags   = data[0];
@@ -61,10 +58,7 @@ impl OrderEvent {
 
         let worker_id = if flags & Self::WORKER_PRESENT != 0 {
             if data.len() < idx + 4 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "missing worker_id",
-                ));
+                return Err(EntryDecodeError::DataIncomplete);
             }
 
             let v = u32::from_le_bytes(data[idx..idx+4].try_into().unwrap());
@@ -76,10 +70,7 @@ impl OrderEvent {
 
         let scrap_count = if flags & Self::SCRAP_PRESENT != 0 {
             if data.len() < idx + 2 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "missing scrap_count",
-                ));
+                return Err(EntryDecodeError::DataIncomplete);
             }
 
             let v = u16::from_le_bytes(data[idx..idx+2].try_into().unwrap());

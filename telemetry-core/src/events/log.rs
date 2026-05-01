@@ -1,4 +1,4 @@
-use std::io;
+use crate::EntryDecodeError;
 
 #[derive(Debug)]
 pub struct LogEvent {
@@ -20,28 +20,22 @@ impl LogEvent {
         &out[..5 + len]
     }
 
-    pub fn decode(data: &[u8]) -> io::Result<Self> {
+    pub fn decode(data: &[u8]) -> Result<Self, EntryDecodeError> {
         if data.len() < 5 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "buffer too small",
-            ));
+            return Err(EntryDecodeError::DataIncomplete);
         }
 
         let category = LogCategory::from_u8(data[0])
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "invalid category"))?;
+            .ok_or_else(|| EntryDecodeError::UnknownLogCategory)?;
 
         let len = u32::from_le_bytes(data[1..5].try_into().unwrap()) as usize;
 
         if data.len() < 5 + len {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "truncated message",
-            ));
+            return Err(EntryDecodeError::DataIncomplete);
         }
 
         let msg = std::str::from_utf8(&data[5..5 + len])
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid utf8"))?
+            .map_err(|_| EntryDecodeError::InvalidUtf8)?
             .to_string();
 
         Ok(Self {

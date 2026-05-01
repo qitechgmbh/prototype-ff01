@@ -9,6 +9,7 @@ def init(path, fig, last_ts):
     columns = [
         "time",
         "peak",
+        "real",
         "drop",
         "exit",
         "in_bounds",
@@ -16,6 +17,7 @@ def init(path, fig, last_ts):
 
     df = read_df(path, "plates", columns)
     df["time"] = pd.to_datetime(df["time"], format="mixed")
+    
     for col in columns[1:3]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 

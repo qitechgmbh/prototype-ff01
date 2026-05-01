@@ -1,8 +1,9 @@
 mod events;
-use std::io;
-use std::io::Read;
-use std::io::Write;
+use std::fmt;
+use std::path::PathBuf;
 
+use chrono::DateTime;
+use chrono::Local;
 pub use events::Event;
 pub use events::WeightEvent;
 pub use events::PlateEvent;
@@ -17,39 +18,81 @@ pub struct Entry {
 }
 
 impl Entry {
-    pub fn write<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        let mut buf = [0u8; 256];
-        let event = self.event.encode(&mut buf);
-        let len = &[(event.len() + size_of::<u64>()) as u8];
-        let ts = &self.timestamp.to_le_bytes();
+    pub fn encode<'a>(
+        &self,
+        buf: &'a mut [u8],
+    ) -> Result<&'a [u8], EntryEncoodeError> {
+        let event_len = self.event.encode(&mut buf[9..]).len();
 
-        writer.write_all(len)?;
-        writer.write_all(ts)?;
-        writer.write_all(event)?;
+        let total_len = 8 + event_len;
+        if buf.len() < total_len + 1 {
+            return Err(EntryEncoodeError::BufferTooSmall);
+        }
 
-        Ok(())
+        buf[0] = total_len as u8;
+        buf[1..9].copy_from_slice(&self.timestamp.to_le_bytes());
+
+        Ok(&buf[..1 + total_len])
     }
 
-    pub fn read<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
-        use io::ErrorKind;
+    pub fn decode(buf: &[u8]) -> Result<Self, EntryDecodeError> {
+        let len = buf[0] as usize;
 
-        let mut buf_len  = [0u8; 1];
-        match reader.read_exact(&mut buf_len) {
-            Ok(v) => v,
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => return Ok(None),
-            Err(e) => return Err(e),
-        };
-        let len = u8::from_le_bytes(buf_len);
+        if buf.len() < len + 3 { // +crc
+            return Err(EntryDecodeError::DataIncomplete);
+        }
 
-        let mut buf_ts = [0u8; 8];
-        reader.read_exact(&mut buf_ts)?;
-        let timestamp = u64::from_le_bytes(buf_ts);
+        let payload = &buf[1..len];
 
-        let mut event_buf = [0u8; 256];
-        let event_len = len as usize - size_of::<u64>();
-        reader.read_exact(&mut event_buf[0..event_len])?;
-        let event = Event::decode(&event_buf)?;
+        let timestamp = u64::from_le_bytes(payload[0..8].try_into().unwrap());
+        let event     = Event::decode(&payload[8..])?;
 
-        Ok(Some(Entry { timestamp, event }))
+        // let crc_expected = u16::from_le_bytes(buf[len..len+2].try_into().unwrap());
+        // let crc_actual = compute_crc(&buf[1..len]);
+        // if crc_expected != crc_actual {
+        //     return Err(EntryDecodeError::Corrupt);
+        // }
+
+        Ok(Self { timestamp, event })
     }
+}
+
+#[derive(Debug)]
+pub enum EntryEncoodeError {
+    BufferTooSmall,
+}
+
+impl fmt::Display for EntryEncoodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EntryEncoodeError::BufferTooSmall => write!(f, "BufferTooSmall"),
+        }
+    }
+}
+
+impl std::error::Error for EntryEncoodeError {}
+
+#[derive(Debug)]
+pub enum EntryDecodeError {
+    DataIncomplete,
+    UnknownTag,
+    InvalidUtf8,
+    UnknownLogCategory,
+}
+
+impl fmt::Display for EntryDecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EntryDecodeError::DataIncomplete => write!(f, "incomplete entry data"),
+            EntryDecodeError::UnknownTag => write!(f, "unknown tag in entry"),
+            EntryDecodeError::InvalidUtf8 => write!(f, "invalid UTF-8 in entry"),
+            EntryDecodeError::UnknownLogCategory => write!(f, "unknown log category"),
+        }
+    }
+}
+
+impl std::error::Error for EntryDecodeError {}
+
+pub fn wal_path_from_date(dir_logs: &PathBuf, dt: DateTime<Local>) -> PathBuf {
+    dir_logs.join(format!("{}.wal", dt.format("%Y%m%d")))
 }

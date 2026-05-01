@@ -1,4 +1,4 @@
-use std::io;
+use crate::EntryDecodeError;
 
 #[derive(Debug)]
 pub struct PlateEvent {
@@ -13,12 +13,9 @@ impl PlateEvent {
         &out[..4]
     }
 
-    pub fn decode(data: &[u8]) -> io::Result<Self> {
+    pub fn decode(data: &[u8]) -> Result<Self, EntryDecodeError> {
         if data.len() < 4 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "buffer too small",
-            ));
+            return Err(EntryDecodeError::DataIncomplete);
         }
 
         let peak = i16::from_le_bytes(data[0..2].try_into().unwrap());
