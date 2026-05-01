@@ -1,146 +1,129 @@
 use std::{io::Write, path::PathBuf};
 
-use chrono::{DateTime, Local};
-use telemetry_core::{Entry, wal_path_from_date};
+use chrono::{DateTime, Local, Utc};
+use telemetry_core::{Entry, EntryEncodeError, wal_path_from_date};
 use tokio::{fs::File, io::{self, AsyncReadExt}};
 
+use crate::MICROSECONDS_PER_DAY;
+
 pub struct LiveDataCache {
-    pub data:  Vec<u8>,
-    pub start: u64,
+    pub data:  Box<[u8; 512 * 1024 * 1024]>, // 512 MiB
+    pub start: usize,
+    pub end:   usize,
 }
 
 impl LiveDataCache {
     pub async fn new(dir_logs: &PathBuf) -> io::Result<Self> {
-        let cutoff = Self::cutoff();
+        let cutoff = Self::compute_cutoff();
 
-        let mut data   = vec![0u8; 400 * 1024 * 1024];
-        let mut cursor = Cursor::new(&mut data);
+        let mut instance = Self {
+            data:  Box::new([0u8; 512 * 1024 * 1024]),
+            start: 0,
+            end:   0,
+        };
 
         let today     = Local::now();
         let yesterday = today - chrono::Duration::days(1);
 
-        // extract entries of the last 24 hours from .wal files
-        extract_entries(dir_logs, yesterday, &mut cursor, cutoff).await?;
-        extract_entries(dir_logs, today,     &mut cursor, cutoff).await?;
+        instance.extract_from_log(dir_logs, yesterday, cutoff).await?;
+        instance.extract_from_log(dir_logs, yesterday, cutoff).await?;
 
-        Ok(Self { data, start: 0 })
+        Ok(instance)
     }
 
-    pub fn extract_prev_24h<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
-        self.update_start()?;
+    pub async fn extract_prev_24h<W: Write>(&mut self, writer: &mut W) -> io::Result<()> {
+        self.update_start();
         let start = self.start as usize;
         writer.write_all(&self.data[start..])?;
         Ok(())
     }
 
-    pub fn append(&mut self, entry: Entry) -> io::Result<()> {
-        let start    = self.start as usize;
-        let capacity = self.data.len() as u64;
+    pub fn append(&mut self, entry: Entry) -> Result<(), EntryEncodeError> {
+        let capacity = self.data.len();
 
-        let mut cursor = Cursor::new(&mut self.data[start..]);
-        entry.write(&mut cursor);
-        self.start += cursor.position();
+        let data = entry.encode(self.data.as_mut_slice())?;
+        self.end += data.len();
 
         // Rotate buffer if 90% of capacity is reached
         if self.start >= capacity * 9 / 10 {
-            self.rotate()?;
+            self.rotate();
         }
 
         Ok(())
     }
 
-    fn cutoff() -> u64 {
+    fn compute_cutoff() -> u64 {
         (Utc::now().timestamp_micros() as u64) - MICROSECONDS_PER_DAY
     }
 
-    fn rotate(&mut self) -> io::Result<()> {
-        let capacity = self.data.len();
+    fn rotate(&mut self) {
+        let len = (self.end - self.start) as usize;
 
-        let mut new_buf = vec![0u8; capacity];
+        let mut data = Box::new([0u8; 512 * 1024 * 1024]);
 
-        self.update_start()?;
-        let start = self.start as usize;
-        let end   = self.data.len() - start;
+        let src = &self.data[self.start as usize..self.end as usize];
+        data[..len].copy_from_slice(src);
 
-        new_buf[..end].copy_from_slice(&self.data[start..end]);
-
-        self.data  = new_buf;
-        self.start = end as u64;
-
-        Ok(())
+        self.data  = data;
+        self.start = 0;
+        self.end   = len;
     }
 
-    fn update_start(&mut self) -> io::Result<()> {
-        use chrono::Utc;
-
-        let cutoff = (Utc::now().timestamp_micros() - 24 * 60 * 60 * 1_000_000) as u64;
-
-        let mut cursor = Cursor::new(&self.data[(self.start as usize)..]);
-        let mut new_start = self.start;
+    async fn extract_from_log(
+        &mut self,
+        dir_logs: &PathBuf, 
+        date:     DateTime<Local>,
+        cutoff:   u64
+    ) -> io::Result<()> {
+        let path = wal_path_from_date(dir_logs, date);
+        let mut file = File::open(path).await?;
 
         loop {
-            let entry_start = cursor.position();
-
-            let len = u16::from_be_bytes(len_buf) as usize;
-
-            let entry = match Entry::read(&mut cursor) {
-                Ok(Some(v)) => v,
-                Ok(None) => break,
-                Err(e) => return Err(e),
-            };
-
-            let entry_end = cursor.position();
-
-            if entry.timestamp >= cutoff {
-                new_start = entry_start;
+            let mut len_buf = [0u8; 1];
+            if file.read_exact(&mut len_buf).await.is_err() {
                 break;
             }
-            new_start = entry_end;
-        }
 
-        self.start = new_start;
+            let len = u8::from_be_bytes(len_buf) as usize;
+
+            let mut data_buf = vec![0u8; len];
+            if file.read_exact(&mut data_buf).await.is_err() {
+                break;
+            }
+
+            let entry = match Entry::decode(&data_buf) {
+                Ok(v) => v,
+                Err(e) => {
+                    // Assume corrupt entry is last entry so exit
+                    eprintln!("Failed to decode entry: {e}");
+                    break;
+                },
+            };
+
+            if entry.timestamp >= cutoff {
+                self.append(entry);
+            }
+        }
 
         Ok(())
     }
-}
 
-// utils
-async fn extract_entries<W: Write>(
-    dir_logs: &PathBuf, 
-    date: DateTime<Local>,
-    writer: &mut W,
-    cutoff: u64
-) -> io::Result<()> {
-    let path = wal_path_from_date(dir_logs, date);
-    let mut file = File::open(path).await?;
+    fn update_start(&mut self) {
+        let cutoff = Self::compute_cutoff();
 
-    loop {
-        let mut len_buf = [0u8; 2];
-        if file.read_exact(&mut len_buf).await.is_err() {
-            break;
-        }
+        let mut start = self.start;
+        let mut data  = &self.data[start..];
 
-        let len = u16::from_be_bytes(len_buf) as usize;
+        loop {
+            let len   = data[0] as usize;
+            let entry = Entry::decode(&data[1..1 + len])
+                .expect("Corrupt entries should never pass .append()");
 
-        let mut buf = vec![0u8; len];
-        if file.read_exact(&mut buf).await.is_err() {
-            break;
-        }
+            if entry.timestamp < cutoff {
+                start += 1 + len; // size + len
+            }
 
-        let entry = match Entry::decode(&buf) {
-            Ok(v) => v,
-            Err(e) => {
-                // Assume corrupt entry is last entry so exit
-                eprintln!("Failed to decode entry: {e}");
-                break;
-            },
-        };
-
-        if entry.timestamp >= cutoff {
-            
-            entry.encode(writer)?; // TODO: Remove this
+            data = &data[1 + len..];
         }
     }
-
-    Ok(())
 }

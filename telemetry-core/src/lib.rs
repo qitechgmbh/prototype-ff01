@@ -21,12 +21,12 @@ impl Entry {
     pub fn encode<'a>(
         &self,
         buf: &'a mut [u8],
-    ) -> Result<&'a [u8], EntryEncoodeError> {
+    ) -> Result<&'a [u8], EntryEncodeError> {
         let event_len = self.event.encode(&mut buf[9..]).len();
 
         let total_len = 8 + event_len;
         if buf.len() < total_len + 1 {
-            return Err(EntryEncoodeError::BufferTooSmall);
+            return Err(EntryEncodeError::BufferTooSmall);
         }
 
         buf[0] = total_len as u8;
@@ -35,17 +35,13 @@ impl Entry {
         Ok(&buf[..1 + total_len])
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self, EntryDecodeError> {
-        let len = buf[0] as usize;
-
-        if buf.len() < len + 3 { // +crc
+    pub fn decode(data: &[u8]) -> Result<Self, EntryDecodeError> {
+        if data.len() < 8 + 1 { // timestamp + tag
             return Err(EntryDecodeError::DataIncomplete);
         }
 
-        let payload = &buf[1..len];
-
-        let timestamp = u64::from_le_bytes(payload[0..8].try_into().unwrap());
-        let event     = Event::decode(&payload[8..])?;
+        let timestamp = u64::from_le_bytes(data[0..8].try_into().unwrap());
+        let event     = Event::decode(&data[8..])?;
 
         // let crc_expected = u16::from_le_bytes(buf[len..len+2].try_into().unwrap());
         // let crc_actual = compute_crc(&buf[1..len]);
@@ -58,19 +54,19 @@ impl Entry {
 }
 
 #[derive(Debug)]
-pub enum EntryEncoodeError {
+pub enum EntryEncodeError {
     BufferTooSmall,
 }
 
-impl fmt::Display for EntryEncoodeError {
+impl fmt::Display for EntryEncodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            EntryEncoodeError::BufferTooSmall => write!(f, "BufferTooSmall"),
+            EntryEncodeError::BufferTooSmall => write!(f, "BufferTooSmall"),
         }
     }
 }
 
-impl std::error::Error for EntryEncoodeError {}
+impl std::error::Error for EntryEncodeError {}
 
 #[derive(Debug)]
 pub enum EntryDecodeError {
