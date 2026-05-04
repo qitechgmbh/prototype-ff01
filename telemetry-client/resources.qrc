@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>upload.svg</file>
+        <file>avg_time.svg</file>
+        <file>archive.svg</file>
+        <file>dashboard.svg</file>
+        <file>live.svg</file>
+        <file>components/InfoBox.qml</file>
+    </qresource>
+</RCC>

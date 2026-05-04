@@ -1,44 +1,114 @@
-use std::{io::{self}, net::SocketAddr};
-use telemetry_core::Entry;
-use tokio::{io::AsyncReadExt, net::{TcpListener, TcpStream}};
+use std::{io::Read, os::unix::net::UnixListener};
 
-use crate::AppState;
+use duckdb::{Appender, Connection, params};
+use telemetry_core::{Entry, Event, LogEvent, OrderEvent, PlateEvent, WeightEvent};
 
-pub async fn run(port: u16, state: AppState) -> io::Result<()> {
-    let address  = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = TcpListener::bind(address).await?;
+struct State<'a> {
+    // appenders
+    pub weights: Appender<'a>,
+    pub plates:  Appender<'a>,
 
-    println!("ingestion listening on {}", address);
+    #[allow(unused)]
+    pub orders:  Appender<'a>,
+    pub logs:    Appender<'a>,
 
-    loop {
-        let (socket, _) = listener.accept().await?;
-        let state = state.clone();
-        tokio::spawn(worker(state, socket));
+    // buffers
+    pub weight_buf: Vec<(u64, WeightEvent)>,
+    pub plate_buf:  Vec<(u64, PlateEvent)>,
+    pub order_buf:  Vec<(u64, OrderEvent)>,
+    pub log_buf:    Vec<(u64, LogEvent)>,
+}
+
+impl<'a> State<'a> {
+    pub fn new(connection: &'a duckdb::Connection) -> anyhow::Result<Self> {
+        Ok(Self {
+            weights: connection.appender("weights")?,
+            plates:  connection.appender("plates")?,
+            orders:  connection.appender("orders")?,
+            logs:    connection.appender("logs")?,
+
+            weight_buf: Vec::with_capacity(32),
+            plate_buf:  Vec::with_capacity(32),
+            order_buf:  Vec::with_capacity(32),
+            log_buf:    Vec::with_capacity(32),
+        })
+    }
+
+    pub fn append(&mut self, entry: &Entry) {
+        println!("Appending: {:?}", entry);
+
+        match &entry.event {
+            Event::Weight(event) => {
+                self.weight_buf.push((entry.timestamp, event.clone()));
+            }
+            Event::Plate(event) => {
+                self.plate_buf.push((entry.timestamp, event.clone()));
+            }
+            Event::Order(event) => {
+                self.order_buf.push((entry.timestamp, event.clone()));
+            }
+            Event::Log(event) => {
+                self.log_buf.push((entry.timestamp, event.clone()));
+            }
+        }
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.weight_buf.len() > 1024
+        || self.plate_buf.len() > 1024
+        || self.order_buf.len() > 1024
+        || self.log_buf.len() > 1024
+    }
+
+    pub fn flush(&mut self) -> anyhow::Result<()> {
+        for (ts, e) in self.weight_buf.drain(..) {
+            self.weights.append_row(params![ts, e.weight_0, e.weight_1])?;
+        }
+
+        for (ts, e) in self.plate_buf.drain(..) {
+            self.plates.append_row(params![ts, e.peak, e.real])?;
+        }
+
+        for (ts, e) in self.order_buf.drain(..) {
+            let _ = (ts, e);
+        }
+
+        for (ts, e) in self.log_buf.drain(..) {
+            self.logs.append_row(params![ts, e.category as u8, e.message])?;
+        }
+
+        Ok(())
     }
 }
 
-async fn worker(state: AppState, mut socket: TcpStream) {
+pub fn run(listener: UnixListener, connection: Connection) -> anyhow::Result<()> {
     loop {
-        let mut len_buf = [0u8; 1];
-        if socket.read(&mut len_buf).await.is_err() {
-            break;
-        }
+        let (mut stream, _) = listener.accept()?;
 
-        let len = u8::from_be_bytes(len_buf) as usize;
+        let mut state = State::new(&connection)?;
 
-        let mut buf = vec![0u8; len];
-        if socket.read_exact(&mut buf).await.is_err() {
-            break;
-        }
+        loop {
+            let mut len_buf = [0u8; 2];
 
-        match Entry::decode(&buf) {
-            Ok(entry) => {
-                let mut cache = state.live_data_cache.write().await;
-                cache.append(entry) .expect("TODO: REMOVE THIS");
-            },
-            Err(e) => {
-                eprintln!("failed to decode entry: {e}");
-            },
+            if let Err(e) = stream.read_exact(&mut len_buf) {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    state.flush()?;
+                    break;
+                }
+                return Err(e.into());
+            }
+
+            let len = u16::from_le_bytes(len_buf) as usize;
+
+            let mut buf = vec![0u8; len];
+            stream.read_exact(&mut buf)?;
+
+            let entry: Entry = postcard::from_bytes(&buf)?;
+            state.append(&entry);
+
+            if state.is_full() {
+                state.flush()?;
+            }
         }
     }
 }

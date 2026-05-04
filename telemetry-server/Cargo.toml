@@ -1,5 +1,5 @@
 [package]
-name = "telemetry-journal"
+name = "telemetry-server"
 version = "0.1.0"
 edition = "2024"
 
@@ -10,3 +10,8 @@ heapless = "0.7.17"
 chrono="0.4.44"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
+
+duckdb="1.10502.0"
+
+anyhow="1.0.102"
+postcard="1.1.3"

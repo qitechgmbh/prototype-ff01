@@ -1,18 +1,15 @@
 use std::{io, net::SocketAddr};
 
-use axum::{Router, extract::Path, response::IntoResponse, routing::get};
+use axum::{Router, response::IntoResponse, routing::get};
 
-use crate::AppState;
-
-pub async fn run(state: AppState, query_port: u16) -> io::Result<()> {
-    _ = state;
-    
+pub async fn run(query_port: u16) -> io::Result<()> {
     let app = Router::new()
-        .route("/telemetry/live",                     get(live))
-        .route("/telemetry/archive/days",             get(days))
-        .route("/telemetry/archive/days/:date",       get(day_by_date))
-        .route("/telemetry/archive/orders",           get(orders))
-        .route("/telemetry/archive/orders/:order_id", get(orders));
+        .route("/api/telemetry/live",                     get(live))
+        .route("/api/telemetry/archive/days",             get(days))
+        // .route("/api/telemetry/archive/days/:date",       get(day_by_date))
+        .route("/api/telemetry/archive/orders",           get(orders))
+        .route("/api/telemetry/archive/orders/:order_id", get(orders))
+        ;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], query_port));
     println!("Server running on http://{}", addr);
@@ -23,17 +20,25 @@ pub async fn run(state: AppState, query_port: u16) -> io::Result<()> {
 }
 
 async fn live() -> impl IntoResponse {
-    "live telemetry"
+    let result = tokio::task::spawn_blocking(|| {
+
+        // blocking DuckDB query
+        "LIVE DATA BIATCH (from duckdb)"
+
+        
+    })
+    .await;
+
+    match result {
+        Ok(v) => v,
+        Err(_) => "internal error",
+    }
 }
 
 async fn days() -> impl IntoResponse {
     "list of available days"
 }
 
-async fn day_by_date(Path(date): Path<String>) -> impl IntoResponse {
-    format!("data for day {}", date)
-}
-
 async fn orders() -> impl IntoResponse {
-    "orders archive"
+    "list of available orders"
 }

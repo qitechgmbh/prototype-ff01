@@ -1,113 +1,81 @@
-use std::{io::{self}, net::SocketAddr, path::PathBuf, sync::Arc};
-
-use tokio::{sync::RwLock, task};
-use axum::{
-    Router, extract::Path, http, response::IntoResponse, routing::get
-};
-
-
-mod query;
-
-mod cache;
-use cache::LiveDataCache;
-
-const MICROSECONDS_PER_DAY: u64 = 86_400_000_000;
-
-pub struct Config {
-    pub dir_logs:    PathBuf,
-    pub dir_archive: PathBuf,
-}
-#[derive(Clone)]
-struct AppState {
-    dir_logs: PathBuf,
-    dir_archive: PathBuf,
-    live_data_cache: Arc<RwLock<LiveDataCache>>
-}
+use std::{os::unix::net::UnixListener, path::{Path, PathBuf}};
+use duckdb::Connection;
 
 mod ingest;
+mod query;
 
 #[tokio::main]
-async fn main() -> io::Result<()> {
-    use std::env::var;
+async fn main() -> anyhow::Result<()> {
+    let db_path: PathBuf = "/home/entity/work/qitech/prototype-ff01/testing/sandbox/data.db".into();
+    let connection = init_db(db_path)?;
 
-    let dir_logs: PathBuf = var("DIR_LOGS")
-        .expect("DIR_LOGS missing")
-        .into();
+    let socket_path = "/tmp/qitech_telemetry.sock";
 
-    let dir_archive: PathBuf = var("DIR_ARCHIVE")
-        .expect("DIR_ARCHIVE missing")
-        .into();
+    // remove stale socket file if it exists
+    if let Err(e) = std::fs::remove_file(socket_path) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            return Err(e.into());
+        }
+    }
 
-    let ingest_port: u16 = var("INGEST_PORT").unwrap().parse().unwrap();
-    let http_port:   u16 = var("HTTP_PORT").unwrap().parse().unwrap();
+    let ingest_listener = UnixListener::bind(socket_path)?;
 
-    let live_data_cache = LiveDataCache::new(&dir_logs).await?;
-    let live_data_cache = Arc::new(RwLock::new(live_data_cache));
-
-    let app_state = AppState { dir_logs, dir_archive, live_data_cache };
-
-    task::spawn({
-        let state = app_state.clone();
-        async move {
-            ingest::run(ingest_port, state).await;
+    // seperate thread handling ingestion of data
+    _ = std::thread::spawn(|| {
+        if let Err(e) = ingest::run(ingest_listener, connection) {
+            eprintln!("Ingest exited with error: {}", e);
         }
     });
 
-    _ = task::spawn({
-        let state =  app_state.clone();
-        async move {
-            query::run(state, http_port).await;
-        }
-    });
+    // run axum server
+    query::run(9000).await?;
 
     Ok(())
 }
 
-async fn run(
-    dir_logs: PathBuf, 
-    dir_archive: PathBuf, 
-    ingest_port: u16, 
-    query_port: u16
-) -> io::Result<()> {
-    let live_data_cache = LiveDataCache::new(&dir_logs).await?;
-    let live_data_cache = Arc::new(RwLock::new(live_data_cache));
+pub fn init_db<P: AsRef<Path>>(path: P) -> duckdb::Result<Connection> {
+    let connection = Connection::open(path)?;
 
-    let app_state = AppState { dir_logs, dir_archive, live_data_cache };
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS weights (
+            timestamp TIMESTAMP_NS,
+            order_id  UINTEGER,
+            weight_0  SMALLINT,
+            weight_1  SMALLINT
+        )",
+        [],
+    )?;
 
-    _ = task::spawn(async move {
-        if let Err(e) = ingest::run(ingest_port, app_state.clone()).await {
-            eprintln!("Error in Ingest Task: {}", e);
-        }
-    });
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS plates (
+            timestamp TIMESTAMP_NS,
+            order_id  UINTEGER,
+            peak SMALLINT NOT NULL,
+            real SMALLINT NOT NULL
+        )",
+        [],
+    )?;
 
-    let app = Router::new()
-        .route("/telemetry/live",                     get(live))
-        .route("/telemetry/archive/days",             get(days))
-        .route("/telemetry/archive/days/:date",       get(day_by_date))
-        .route("/telemetry/archive/orders",           get(orders))
-        .route("/telemetry/archive/orders/:order_id", get(orders));
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS orders (
+            order_id     UINTEGER PRIMARY KEY,
+            worker_id    UINTEGER,
+            bounds       SMALLINT[4],
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], query_port));
-    println!("Server running on http://{}", addr);
+            started_at   TIMESTAMP_NS NOT NULL,
+            completed_at TIMESTAMP_NS
+        )",
+        [],
+    )?;
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS logs (
+            timestamp TIMESTAMP_NS NOT NULL,
+            category TINYINT NOT NULL,
+            message  VARCHAR NOT NULL
+        )",
+        [],
+    )?;
 
-    Ok(())
-}
-
-async fn live() -> impl IntoResponse {
-    "live telemetry"
-}
-
-async fn days() -> impl IntoResponse {
-    "list of available days"
-}
-
-async fn day_by_date(Path(date): Path<String>) -> impl IntoResponse {
-    format!("data for day {}", date)
-}
-
-async fn orders() -> impl IntoResponse {
-    "orders archive"
+    Ok(connection)
 }

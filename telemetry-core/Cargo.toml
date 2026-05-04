@@ -4,11 +4,5 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-crossbeam="0.8.4"
-chrono="0.4.44"
-
-arrow="58.1.0"
-parquet="58.1.0"
-
-tar="0.4.45"
-flate2="1.1.9"
+postcard="1.1.3"
+serde="1.0.228"
