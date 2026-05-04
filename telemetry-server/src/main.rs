@@ -1,11 +1,11 @@
-use std::{os::unix::net::UnixListener, path::{Path, PathBuf}};
+use std::{os::unix::net::UnixListener, path::{Path, PathBuf}, thread, time::Duration};
 use duckdb::Connection;
 
 mod ingest;
-mod query_server;
+mod query;
 
 fn main() -> anyhow::Result<()> {
-    let db_path: PathBuf = "/home/entity/work/qitech/prototype-ff01/testing/sandbox/data.db".into();
+    let db_path: PathBuf = "/home/entity/qitech/prototype-ff01/testing/sandbox/data.db".into();
     let connection = init_db(&db_path)?;
 
     let socket_path = "/tmp/qitech_telemetry.sock";
@@ -19,17 +19,44 @@ fn main() -> anyhow::Result<()> {
 
     let ingest_listener = UnixListener::bind(socket_path)?;
 
-    // seperate thread handling ingestion of data
-    _ = std::thread::spawn(|| {
+    let mut ingest_handle = spawn_ingest(ingest_listener, connection);
+    let mut query_handle  = spawn_query(db_path.clone());
+
+    loop {
+        thread::sleep(Duration::from_secs(1));
+
+        if ingest_handle.is_finished() {
+            let connection = init_db(&db_path)?;
+            let ingest_listener = UnixListener::bind(socket_path)?;
+
+            eprintln!("Ingest died → restarting");
+            ingest_handle = spawn_ingest(ingest_listener, connection);
+        }
+
+        if query_handle.is_finished() {
+            eprintln!("Query died → restarting");
+            query_handle = spawn_query(db_path.clone());
+        }
+    }
+}
+
+fn spawn_ingest(
+    ingest_listener: UnixListener, 
+    connection: Connection
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
         if let Err(e) = ingest::run(ingest_listener, connection) {
             eprintln!("Ingest exited with error: {}", e);
         }
-    });
+    })
+}
 
-    // run query server
-    query_server::run(9000, db_path)?;
-
-    Ok(())
+fn spawn_query(db_path: PathBuf) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        if let Err(e) = query::run(9000, db_path) {
+            eprintln!("Query server exited with error: {}", e);
+        }
+    })
 }
 
 pub fn init_db<P: AsRef<Path>>(path: P) -> duckdb::Result<Connection> {
@@ -70,8 +97,8 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> duckdb::Result<Connection> {
     connection.execute(
         "CREATE TABLE IF NOT EXISTS logs (
             timestamp TIMESTAMP_NS NOT NULL,
-            category TINYINT NOT NULL,
-            message  VARCHAR NOT NULL
+            category  TINYINT NOT NULL,
+            message   VARCHAR NOT NULL
         )",
         [],
     )?;

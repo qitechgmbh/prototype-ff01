@@ -1,42 +1,30 @@
 use std::{io::Read, os::unix::net::UnixListener};
 
-use duckdb::{Appender, Connection, params};
+use chrono::{DateTime, Utc};
+use duckdb::{Connection, params};
 use telemetry_core::{Entry, Event, LogEvent, OrderEvent, PlateEvent, WeightEvent};
 
-struct State<'a> {
-    // appenders
-    pub weights: Appender<'a>,
-    pub plates:  Appender<'a>,
+struct State {
+    pub connection: duckdb::Connection,
 
-    #[allow(unused)]
-    pub orders:  Appender<'a>,
-    pub logs:    Appender<'a>,
-
-    // buffers
-    pub weight_buf: Vec<(u64, WeightEvent)>,
-    pub plate_buf:  Vec<(u64, PlateEvent)>,
-    pub order_buf:  Vec<(u64, OrderEvent)>,
-    pub log_buf:    Vec<(u64, LogEvent)>,
+    pub weight_buf: Vec<(DateTime<Utc>, WeightEvent)>,
+    pub plate_buf:  Vec<(DateTime<Utc>, PlateEvent)>,
+    pub order_buf:  Vec<(DateTime<Utc>, OrderEvent)>,
+    pub logs_buf:    Vec<(DateTime<Utc>, LogEvent)>,
 }
 
-impl<'a> State<'a> {
-    pub fn new(connection: &'a duckdb::Connection) -> anyhow::Result<Self> {
+impl State {
+    pub fn new(connection: duckdb::Connection) -> anyhow::Result<Self> {
         Ok(Self {
-            weights: connection.appender("weights")?,
-            plates:  connection.appender("plates")?,
-            orders:  connection.appender("orders")?,
-            logs:    connection.appender("logs")?,
-
+            connection,
             weight_buf: Vec::with_capacity(32),
             plate_buf:  Vec::with_capacity(32),
             order_buf:  Vec::with_capacity(32),
-            log_buf:    Vec::with_capacity(32),
+            logs_buf:    Vec::with_capacity(32),
         })
     }
 
     pub fn append(&mut self, entry: &Entry) {
-        println!("Appending: {:?}", entry);
-
         match &entry.event {
             Event::Weight(event) => {
                 self.weight_buf.push((entry.timestamp, event.clone()));
@@ -48,7 +36,7 @@ impl<'a> State<'a> {
                 self.order_buf.push((entry.timestamp, event.clone()));
             }
             Event::Log(event) => {
-                self.log_buf.push((entry.timestamp, event.clone()));
+                self.logs_buf.push((entry.timestamp, event.clone()));
             }
         }
     }
@@ -57,35 +45,61 @@ impl<'a> State<'a> {
         self.weight_buf.len() > 32
         || self.plate_buf.len() > 32
         || self.order_buf.len() > 32
-        || self.log_buf.len() > 32
+        || self.logs_buf.len() > 32
     }
 
     pub fn flush(&mut self) -> anyhow::Result<()> {
+        let tx = self.connection.transaction()?;
+        let mut stmt = tx.prepare("INSERT INTO weights VALUES (?, ?, ?, ?)")?;
+
         for (ts, e) in self.weight_buf.drain(..) {
-            self.weights.append_row(params![ts, e.weight_0, e.weight_1])?;
+            let datetime = format!("{}", ts.format("%Y-%m-%d %H:%M:%S%.f"));
+            stmt.execute(
+                params![
+                    datetime,
+                    e.order_id,  
+                    e.weight_0, 
+                    e.weight_1
+            ])?;
         }
+        tx.commit()?;
 
+        let tx = self.connection.transaction()?;
+        let mut stmt = tx.prepare("INSERT INTO plates VALUES (?, ?, ?)")?;
         for (ts, e) in self.plate_buf.drain(..) {
-            self.plates.append_row(params![ts, e.peak, e.real])?;
+            let datetime = format!("{}", ts.format("%Y-%m-%d %H:%M:%S%.f"));
+            stmt.execute(
+                params![
+                    datetime,
+                    e.peak,
+                    e.real,
+            ])?;
         }
+        tx.commit()?;
 
-        for (ts, e) in self.order_buf.drain(..) {
-            let _ = (ts, e);
+        // logs
+        let tx = self.connection.transaction()?;
+        let mut stmt = tx.prepare("INSERT INTO logs VALUES (?, ?, ?)")?;
+        for (ts, e) in self.logs_buf.drain(..) {
+            let datetime = format!("{}", ts.format("%Y-%m-%d %H:%M:%S%.f"));
+            stmt.execute(
+                params![
+                    datetime,
+                    e.category as u8,
+                    e.message,
+            ])?;
         }
-
-        for (ts, e) in self.log_buf.drain(..) {
-            self.logs.append_row(params![ts, e.category as u8, e.message])?;
-        }
+        tx.commit()?;
 
         Ok(())
     }
 }
 
 pub fn run(listener: UnixListener, connection: Connection) -> anyhow::Result<()> {
+    let mut state = State::new(connection)?;
+
     loop {
         let (mut stream, _) = listener.accept()?;
-
-        let mut state = State::new(&connection)?;
 
         loop {
             let mut len_buf = [0u8; 2];
@@ -101,9 +115,22 @@ pub fn run(listener: UnixListener, connection: Connection) -> anyhow::Result<()>
             let len = u16::from_le_bytes(len_buf) as usize;
 
             let mut buf = vec![0u8; len];
-            stream.read_exact(&mut buf)?;
+            if let Err(e) = stream.read_exact(&mut buf) {
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    state.flush()?;
+                    break;
+                }
+                return Err(e.into());
+            }
 
-            let entry: Entry = postcard::from_bytes(&buf)?;
+            let entry: Entry = match postcard::from_bytes(&buf) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("e: {}", e);
+                    return Err(e.into());
+                },
+            };
+
             state.append(&entry);
 
             if state.is_full() {

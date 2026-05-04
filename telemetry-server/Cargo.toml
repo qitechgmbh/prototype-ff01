@@ -7,7 +7,7 @@ edition = "2024"
 telemetry-core = { path = "../telemetry-core" }
 
 chrono="0.4.44"
-duckdb="1.10502.0"
+duckdb={ version = "1.0.0" }
 
 anyhow="1.0.102"
 postcard="1.1.3"

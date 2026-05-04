@@ -1,55 +1,100 @@
 use std::{
-    io::{Read, Write},
-    net::TcpStream,
+    io::{ErrorKind, Read, Write},
+    net::TcpStream, time::Duration,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = TcpStream::connect("127.0.0.1:9000")?;
+    stream.set_read_timeout(Some(Duration::from_millis(200)))?;
 
+    let i = get_weights(&mut stream)?;
+    println!("Counted weights: {}", i);
+
+    Ok(())
+}
+
+fn get_weights(stream: &mut TcpStream) -> Result<u32, Box<dyn std::error::Error>> {
     // send request (newline-terminated)
     let request = "weights\n";
     stream.write_all(request.as_bytes())?;
     stream.flush()?;
 
-    // read binary response
-    let mut buffer = vec![0u8; 4096];
-
-    let n = stream.read(&mut buffer)?;
-
-    println!("received {} bytes", n);
-
-    // optional: decode one row (example)
     let mut i = 0;
-    while i < n {
-        let flags = buffer[i];
-        i += 1;
+    loop {
+        let mut flags_buf = [0u8; 1];
+        if let Err(e) = stream.read_exact(&mut flags_buf) {
+            if e.kind() == ErrorKind::WouldBlock {
+                break;
+            } 
 
-        println!("flags: {:#08b}", flags);
+            return Err(Box::new(e));
+        };
+
+        let flags = flags_buf[0];
+
+        let mut ts_buf = [0u8; 8];
+        stream.read_exact(&mut ts_buf)?;
+
+        let mut buf_4b = [0u8; 4];
+        let mut buf_2b = [0u8; 2];
 
         if flags & 1 == 0 {
-            let ts = i64::from_le_bytes(buffer[i..i+8].try_into()?);
-            i += 8;
-            println!("timestamp: {}", ts);
+            stream.read_exact(&mut buf_4b)?;
         }
 
         if flags & 2 == 0 {
-            let order_id = u32::from_le_bytes(buffer[i..i+4].try_into()?);
-            i += 4;
-            println!("order_id: {}", order_id);
+            stream.read_exact(&mut buf_2b)?;
         }
 
         if flags & 4 == 0 {
-            let w0 = i16::from_le_bytes(buffer[i..i+2].try_into()?);
-            i += 2;
-            println!("weight_0: {}", w0);
+            stream.read_exact(&mut buf_2b)?;
         }
 
-        if flags & 8 == 0 {
-            let w1 = i16::from_le_bytes(buffer[i..i+2].try_into()?);
-            i += 2;
-            println!("weight_1: {}", w1);
-        }
+        i += 1;
     }
 
-    Ok(())
+    Ok(i)
+}
+
+fn get_plates(stream: &mut TcpStream) -> Result<u32, Box<dyn std::error::Error>> {
+    // send request (newline-terminated)
+    let request = "weights\n";
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
+
+    let mut i = 0;
+    loop {
+        let mut flags_buf = [0u8; 1];
+        if let Err(e) = stream.read_exact(&mut flags_buf) {
+            if e.kind() == ErrorKind::WouldBlock {
+                break;
+            } 
+
+            return Err(Box::new(e));
+        };
+
+        let flags = flags_buf[0];
+
+        let mut ts_buf = [0u8; 8];
+        stream.read_exact(&mut ts_buf)?;
+
+        let mut buf_4b = [0u8; 4];
+        let mut buf_2b = [0u8; 2];
+
+        if flags & 1 == 0 {
+            stream.read_exact(&mut buf_4b)?;
+        }
+
+        if flags & 2 == 0 {
+            stream.read_exact(&mut buf_2b)?;
+        }
+
+        if flags & 4 == 0 {
+            stream.read_exact(&mut buf_2b)?;
+        }
+
+        i += 1;
+    }
+
+    Ok(i)
 }

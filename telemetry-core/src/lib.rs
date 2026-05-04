@@ -1,8 +1,9 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
-    pub timestamp: u64,
+    pub timestamp: DateTime<Utc>,
     pub event:     Event,
 }
 
@@ -16,8 +17,26 @@ pub enum Event {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeightEvent {
+    pub order_id: Option<u32>,
     pub weight_0: Option<i16>,
     pub weight_1: Option<i16>,
+}
+
+impl WeightEvent {
+    pub fn encode<'a>(&self, buf: &'a mut [u8]) -> &'a [u8] {
+        let mut flags: u8 = 0;
+        if self.order_id.is_none() { flags |= 1 << 0; }
+        if self.weight_0.is_none() { flags |= 1 << 1; }
+        if self.weight_1.is_none() { flags |= 1 << 2; }
+        buf[0] = flags;
+
+        let mut i = 1;
+        if let Some(v) = order_id {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+
+        buf
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

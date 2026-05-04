@@ -1,6 +1,6 @@
 use std::{io::{self, BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, path::PathBuf, sync::Arc, thread};
 
-use duckdb::{Connection, types::Value};
+use duckdb::{Config, Connection, types::Value};
 
 pub fn run(query_port: u16, db_path: PathBuf) -> io::Result<()> {
     let db_path = Arc::new(db_path);
@@ -27,13 +27,13 @@ fn handle_client(
     db_path: Arc<PathBuf>
 ) -> anyhow::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
-    let mut connection = duckdb::Connection::open(&*db_path)?;
-    
+
+    let config = Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
+    let mut connection = Connection::open_with_flags(&*db_path, config)?;
+
     let mut line = String::new();
 
     while reader.read_line(&mut line)? > 0 {
-        println!("Receive request: {}", line);
-
         let request = line.trim();
 
         if request.is_empty() {
@@ -44,8 +44,6 @@ fn handle_client(
         let Some(request) = parse_request(&line) else {
             continue;
         };
-
-        println!("The request: {:?}", &request);
 
         process(request, &mut connection, &mut stream)?;
     }
@@ -166,16 +164,12 @@ fn process(
         (None, None) => {}
     }
 
-    println!("Query: {}", &sql);
-
     let mut statement = connection.prepare(&sql)?;
 
     let refs: Vec<&dyn duckdb::ToSql> =
         bind_values.iter().map(|v| v as &dyn duckdb::ToSql).collect();
 
     let mut rows = statement.query(&refs[..])?;
-
-    println!("Rows: GOT");
 
     while let Some(row) = rows.next()? {
         let timestamp: i64 = row.get(0)?;
@@ -207,7 +201,6 @@ fn process(
             buf.extend_from_slice(&v.to_le_bytes());
         }
 
-        println!("Appending: {:?}", &buf);
         stream.write_all(&buf)?;
     }
 

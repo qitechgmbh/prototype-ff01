@@ -403,6 +403,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -1429,6 +1430,7 @@ dependencies = [
 name = "telemetry-core"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "postcard",
  "serde",
 ]
