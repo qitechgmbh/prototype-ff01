@@ -39,6 +39,6 @@ fn main() -> std::io::Result<()> {
 
         stream.flush()?;
 
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_secs_f64(1.0 / 32.0));
     }
 }

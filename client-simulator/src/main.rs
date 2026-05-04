@@ -1,17 +1,55 @@
-use std::{thread, time::Duration};
+use std::{
+    io::{Read, Write},
+    net::TcpStream,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = reqwest::blocking::Client::new();
+    let mut stream = TcpStream::connect("127.0.0.1:9000")?;
 
-    loop {
-        let res = client
-            .get("http://localhost:9000/api/telemetry/live")
-            .send()?;
+    // send request (newline-terminated)
+    let request = "weights\n";
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
 
-        let body = res.text()?;
+    // read binary response
+    let mut buffer = vec![0u8; 4096];
 
-        println!("response: {}", body);
+    let n = stream.read(&mut buffer)?;
 
-        thread::sleep(Duration::from_secs(1));
+    println!("received {} bytes", n);
+
+    // optional: decode one row (example)
+    let mut i = 0;
+    while i < n {
+        let flags = buffer[i];
+        i += 1;
+
+        println!("flags: {:#08b}", flags);
+
+        if flags & 1 == 0 {
+            let ts = i64::from_le_bytes(buffer[i..i+8].try_into()?);
+            i += 8;
+            println!("timestamp: {}", ts);
+        }
+
+        if flags & 2 == 0 {
+            let order_id = u32::from_le_bytes(buffer[i..i+4].try_into()?);
+            i += 4;
+            println!("order_id: {}", order_id);
+        }
+
+        if flags & 4 == 0 {
+            let w0 = i16::from_le_bytes(buffer[i..i+2].try_into()?);
+            i += 2;
+            println!("weight_0: {}", w0);
+        }
+
+        if flags & 8 == 0 {
+            let w1 = i16::from_le_bytes(buffer[i..i+2].try_into()?);
+            i += 2;
+            println!("weight_1: {}", w1);
+        }
     }
+
+    Ok(())
 }

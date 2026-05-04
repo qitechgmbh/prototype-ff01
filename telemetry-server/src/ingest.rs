@@ -54,10 +54,10 @@ impl<'a> State<'a> {
     }
 
     pub fn is_full(&self) -> bool {
-        self.weight_buf.len() > 1024
-        || self.plate_buf.len() > 1024
-        || self.order_buf.len() > 1024
-        || self.log_buf.len() > 1024
+        self.weight_buf.len() > 32
+        || self.plate_buf.len() > 32
+        || self.order_buf.len() > 32
+        || self.log_buf.len() > 32
     }
 
     pub fn flush(&mut self) -> anyhow::Result<()> {

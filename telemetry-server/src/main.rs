@@ -2,12 +2,11 @@ use std::{os::unix::net::UnixListener, path::{Path, PathBuf}};
 use duckdb::Connection;
 
 mod ingest;
-mod query;
+mod query_server;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let db_path: PathBuf = "/home/entity/work/qitech/prototype-ff01/testing/sandbox/data.db".into();
-    let connection = init_db(db_path)?;
+    let connection = init_db(&db_path)?;
 
     let socket_path = "/tmp/qitech_telemetry.sock";
 
@@ -27,8 +26,8 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    // run axum server
-    query::run(9000).await?;
+    // run query server
+    query_server::run(9000, db_path)?;
 
     Ok(())
 }
