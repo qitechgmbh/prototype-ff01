@@ -1,140 +1,69 @@
-use std::{io::Read, os::unix::net::UnixListener};
+use std::{
+    fs,
+    io::{self, Read},
+    os::unix::net::UnixListener,
+    sync::Arc,
+};
+use crossbeam::channel::TrySendError;
 
-use chrono::{DateTime, Utc};
-use duckdb::{Connection, params};
-use telemetry_core::{Entry, Event, LogEvent, OrderEvent, PlateEvent, WeightEvent};
+use telemetry_core::Event;
+use crate::PayloadSender;
 
-struct State {
-    pub connection: duckdb::Connection,
+pub fn run(socket_path: String, subscribers: Arc<[PayloadSender; 2]>) -> anyhow::Result<()> {
+    use io::ErrorKind::NotFound;
+    use io::ErrorKind::UnexpectedEof;
 
-    pub weight_buf: Vec<(DateTime<Utc>, WeightEvent)>,
-    pub plate_buf:  Vec<(DateTime<Utc>, PlateEvent)>,
-    pub order_buf:  Vec<(DateTime<Utc>, OrderEvent)>,
-    pub logs_buf:    Vec<(DateTime<Utc>, LogEvent)>,
-}
-
-impl State {
-    pub fn new(connection: duckdb::Connection) -> anyhow::Result<Self> {
-        Ok(Self {
-            connection,
-            weight_buf: Vec::with_capacity(32),
-            plate_buf:  Vec::with_capacity(32),
-            order_buf:  Vec::with_capacity(32),
-            logs_buf:    Vec::with_capacity(32),
-        })
-    }
-
-    pub fn append(&mut self, entry: &Entry) {
-        match &entry.event {
-            Event::Weight(event) => {
-                self.weight_buf.push((entry.timestamp, event.clone()));
-            }
-            Event::Plate(event) => {
-                self.plate_buf.push((entry.timestamp, event.clone()));
-            }
-            Event::Order(event) => {
-                self.order_buf.push((entry.timestamp, event.clone()));
-            }
-            Event::Log(event) => {
-                self.logs_buf.push((entry.timestamp, event.clone()));
-            }
+    if let Err(e) = fs::remove_file(&socket_path) {
+        if e.kind() != NotFound {
+            return Err(e.into());
         }
     }
 
-    pub fn is_full(&self) -> bool {
-        self.weight_buf.len() > 32
-        || self.plate_buf.len() > 32
-        || self.order_buf.len() > 32
-        || self.logs_buf.len() > 32
-    }
-
-    pub fn flush(&mut self) -> anyhow::Result<()> {
-        let tx = self.connection.transaction()?;
-        let mut stmt = tx.prepare("INSERT INTO weights VALUES (?, ?, ?, ?)")?;
-
-        for (ts, e) in self.weight_buf.drain(..) {
-            let datetime = format!("{}", ts.format("%Y-%m-%d %H:%M:%S%.f"));
-            stmt.execute(
-                params![
-                    datetime,
-                    e.order_id,  
-                    e.weight_0, 
-                    e.weight_1
-            ])?;
-        }
-        tx.commit()?;
-
-        let tx = self.connection.transaction()?;
-        let mut stmt = tx.prepare("INSERT INTO plates VALUES (?, ?, ?)")?;
-        for (ts, e) in self.plate_buf.drain(..) {
-            let datetime = format!("{}", ts.format("%Y-%m-%d %H:%M:%S%.f"));
-            stmt.execute(
-                params![
-                    datetime,
-                    e.peak,
-                    e.real,
-            ])?;
-        }
-        tx.commit()?;
-
-        // logs
-        let tx = self.connection.transaction()?;
-        let mut stmt = tx.prepare("INSERT INTO logs VALUES (?, ?, ?)")?;
-        for (ts, e) in self.logs_buf.drain(..) {
-            let datetime = format!("{}", ts.format("%Y-%m-%d %H:%M:%S%.f"));
-            stmt.execute(
-                params![
-                    datetime,
-                    e.category as u8,
-                    e.message,
-            ])?;
-        }
-        tx.commit()?;
-
-        Ok(())
-    }
-}
-
-pub fn run(listener: UnixListener, connection: Connection) -> anyhow::Result<()> {
-    let mut state = State::new(connection)?;
+    let listener = UnixListener::bind(socket_path)?;
+    let mut buf = [0u8; 512];
 
     loop {
         let (mut stream, _) = listener.accept()?;
 
         loop {
-            let mut len_buf = [0u8; 2];
-
-            if let Err(e) = stream.read_exact(&mut len_buf) {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    state.flush()?;
-                    break;
+            if let Err(e) = stream.read_exact(&mut buf[0..2]) {
+                if e.kind() != UnexpectedEof {
+                    eprintln!("[Ingest] Error while reading from stream {}", e);
                 }
-                return Err(e.into());
+                break;
             }
 
-            let len = u16::from_le_bytes(len_buf) as usize;
+            let len = u16::from_le_bytes(buf[0..2].try_into().unwrap()) as usize;
 
-            let mut buf = vec![0u8; len];
-            if let Err(e) = stream.read_exact(&mut buf) {
-                if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    state.flush()?;
-                    break;
+            if let Err(e) = stream.read_exact(&mut buf[..len]) {
+                if e.kind() != UnexpectedEof {
+                    eprintln!("[Ingest] Error while reading from stream {}", e);
                 }
-                return Err(e.into());
+                break;
             }
 
-            let entry: Entry = match postcard::from_bytes(&buf) {
-                Ok(v) => v,
-                Err(e) => {
-                    println!("e: {}", e);
-                    return Err(e.into());
-                },
+            let data = &buf[0..len];
+
+            // if data is malformed we are out of sync with the stream
+            if Event::decode(data).is_none() {
+                eprintln!("[Ingest] Received malformed data. Dropping connection!");
+                break;
             };
 
-            state.append(&entry);
+            println!("[Ingest] Received {:?}", Event::decode(data).unwrap());
 
-            if state.is_full() {
-                state.flush()?;
+            let message: Arc<Vec<u8>> = Arc::new(data.to_vec());
+
+            let mut i = 0;
+            // forward message to all subscribers
+            for subscriber in subscribers.as_slice() {
+
+                if let Err(TrySendError::Full(_)) = subscriber.try_send(message.clone()) {
+                    eprintln!("[Ingest] failed to send: Channel Full!");
+                    eprintln!("NUM: {i}");
+                };
+
+                i += 1;
             }
         }
     }

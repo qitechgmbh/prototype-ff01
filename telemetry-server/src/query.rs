@@ -1,9 +1,10 @@
 use std::{io::{self, BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, path::PathBuf, sync::Arc, thread};
 
 use duckdb::{Config, Connection, types::Value};
+use arrow::ipc::writer::StreamWriter;
 
-pub fn run(query_port: u16, db_path: PathBuf) -> io::Result<()> {
-    let db_path = Arc::new(db_path);
+pub fn run(query_port: u16, db_path: String) -> io::Result<()> {
+    let db_path = Arc::new(PathBuf::from(db_path));
 
     let listener = TcpListener::bind(("0.0.0.0", query_port))?;
     println!("TCP server running on port {}", query_port);
@@ -28,9 +29,6 @@ fn handle_client(
 ) -> anyhow::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
 
-    let config = Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
-    let mut connection = Connection::open_with_flags(&*db_path, config)?;
-
     let mut line = String::new();
 
     while reader.read_line(&mut line)? > 0 {
@@ -45,7 +43,12 @@ fn handle_client(
             continue;
         };
 
-        process(request, &mut connection, &mut stream)?;
+        // recreate with each request to receive newest snapshots
+        // TODO: Determine cause of that behaviour
+        let config = Config::default().access_mode(duckdb::AccessMode::ReadOnly)?;
+        let connection = Connection::open_with_flags(&*db_path, config)?;
+
+        process(request, connection, &mut stream)?;
     }
 
     Ok(())
@@ -118,7 +121,7 @@ fn parse_request(data: &str) -> Option<Request> {
 
 fn process(
     request: Request,
-    connection: &mut Connection, 
+    connection: Connection, 
     stream: &mut TcpStream,
 ) -> anyhow::Result<()> {
     let table_name = match request.resource {
@@ -169,40 +172,34 @@ fn process(
     let refs: Vec<&dyn duckdb::ToSql> =
         bind_values.iter().map(|v| v as &dyn duckdb::ToSql).collect();
 
-    let mut rows = statement.query(&refs[..])?;
+    let mut buffer = Vec::new();
 
-    while let Some(row) = rows.next()? {
-        let timestamp: i64 = row.get(0)?;
-        let order_id:  Option<u32> = row.get(1)?;
-        let weight_0:  Option<i16> = row.get(2)?;
-        let weight_1:  Option<i16> = row.get(3)?;
+    let mut it = statement.query_arrow(&refs[..])?;
 
-        let mut buf = Vec::with_capacity(32);
-        let mut flags: u8 = 0;
+    let mut i = 0;
+    let mut r = 0;
 
-        // ---- build null bitmask ----
-        if order_id.is_none() { flags |= 1 << 0; }
-        if weight_0.is_none() { flags |= 1 << 1; }
-        if weight_1.is_none() { flags |= 1 << 2; }
+    // Initialize once with schema from first batch
+    if let Some(first_batch) = it.next() {
+        let mut writer = StreamWriter::try_new(&mut buffer, &first_batch.schema())?;
+        writer.write(&first_batch)?;
 
-        // write data, don't write if field is null
-        buf.push(flags);
-        buf.extend_from_slice(&timestamp.to_le_bytes());
-
-        if let Some(v) = order_id {
-            buf.extend_from_slice(&v.to_le_bytes());
+        i = 1;
+        r = first_batch.num_rows();
+        while let Some(batch) = it.next() {
+            writer.write(&batch)?;
+            i += 1;
+            r += batch.num_rows();
         }
 
-        if let Some(v) = weight_0 {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
-
-        if let Some(v) = weight_1 {
-            buf.extend_from_slice(&v.to_le_bytes());
-        }
-
-        stream.write_all(&buf)?;
+        writer.finish()?;
     }
+
+    println!("[Query] Sending {i} RecordBatches totaling {r} rows");
+
+    let len = buffer.len() as u64;
+    stream.write_all(&len.to_le_bytes())?;
+    stream.write_all(&buffer)?;
 
     Ok(())
 }

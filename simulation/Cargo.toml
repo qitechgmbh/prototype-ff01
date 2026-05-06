@@ -1,0 +1,11 @@
+[package]
+name = "machine-simulator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+telemetry-core = { path = "../telemetry-events" }
+heapless="0.9.1"
+chrono="0.4.44"
+arrow="58.2.0"
+rand="0.8"
