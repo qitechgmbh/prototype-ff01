@@ -1,11 +1,16 @@
-use std::{io::Write, net::{TcpListener, TcpStream}, sync::Arc, thread};
+use std::{
+    io::Write,
+    net::{TcpListener, TcpStream},
+    sync::Arc,
+    thread,
+};
 
 use crossbeam::channel::{Sender, TrySendError, bounded};
 
-use crate::{Payload, PayloadReceiver, PayloadSender};
+use crate::{Payload, PayloadReceiver, PayloadSender, LIVE_CHANNEL_CAPACITY};
 
 pub fn run(port: u16, rx: Arc<PayloadReceiver>) -> anyhow::Result<()> {
-    let (clients_tx, clients_rx) = bounded::<PayloadSender>(32);
+    let (clients_tx, clients_rx) = bounded::<PayloadSender>(LIVE_CHANNEL_CAPACITY);
 
     let _ = thread::spawn(move || run_accept(port, clients_tx));
 
@@ -18,9 +23,9 @@ pub fn run(port: u16, rx: Arc<PayloadReceiver>) -> anyhow::Result<()> {
         if let Ok(client_rx) = clients_rx.try_recv() {
             clients.push(client_rx);
         }
-        
-        // send message to each client and remove if 
-        // sending fails for any reason
+
+        // send message to each client and 
+        // remove clients where sending fails
         for (i, tx) in clients.iter().enumerate() {
             match tx.try_send(msg.clone()) {
                 Ok(_) => {}
@@ -44,13 +49,13 @@ pub fn run(port: u16, rx: Arc<PayloadReceiver>) -> anyhow::Result<()> {
 }
 
 fn run_accept(port: u16, clients_tx: Sender<PayloadSender>) -> anyhow::Result<()> {
-    let address  = format!("0.0.0.0:{port}");
+    let address = format!("0.0.0.0:{port}");
     let listener = TcpListener::bind(address)?;
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                let (tx, rx_client) = bounded::<Payload>(256);
+                let (tx, rx_client) = bounded::<Payload>(LIVE_CHANNEL_CAPACITY);
 
                 // give server the Sender for the client
                 clients_tx.send(tx)?;
@@ -66,10 +71,7 @@ fn run_accept(port: u16, clients_tx: Sender<PayloadSender>) -> anyhow::Result<()
 }
 
 fn handle_client(mut stream: TcpStream, rx: PayloadReceiver) -> anyhow::Result<()> {
-    println!("[Live] Client initialized!");
-
     for msg in rx.iter() {
-        println!("[Live] Sending: {:?}", msg);
         let len = msg.len() as u16;
         stream.write_all(&len.to_le_bytes())?;
         stream.write_all(&msg)?

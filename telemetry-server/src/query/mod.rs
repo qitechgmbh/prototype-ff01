@@ -1,13 +1,14 @@
-use std::{io::{self, BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, path::PathBuf, sync::Arc, thread};
+use std::{io::{self, BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, path::PathBuf, str::SplitWhitespace, sync::Arc, thread};
 
 use duckdb::{Config, Connection, types::Value};
 use arrow::ipc::writer::StreamWriter;
+
+mod weights;
 
 pub fn run(query_port: u16, db_path: String) -> io::Result<()> {
     let db_path = Arc::new(PathBuf::from(db_path));
 
     let listener = TcpListener::bind(("0.0.0.0", query_port))?;
-    println!("TCP server running on port {}", query_port);
 
     for stream in listener.incoming() {
         let stream  = stream?;
@@ -15,7 +16,7 @@ pub fn run(query_port: u16, db_path: String) -> io::Result<()> {
 
         thread::spawn(move || {
             if let Err(e) = handle_client(stream, db_path) {
-                eprintln!("client error: {}", e);
+                eprintln!("[Query] Client exited with Error: {e}");
             }
         });
     }
@@ -64,16 +65,107 @@ struct Request {
 
 #[derive(Debug, Clone, Copy)]
 enum Resource {
-    Weights
+    Weights,
+    Plates,
+    Orders,
+    Logs,
+}
+
+fn handle_weights_request(parts: SplitWhitespace<'_>) -> Option<Request> {
+    let mut from     = None;
+    let mut to       = None;
+    let mut order_id = None;
+
+    // remaining tokens: "FROM", "100", "TO", "200", etc.
+    let tokens: Vec<&str> = parts.collect();
+
+    let mut i = 0;
+    while i < tokens.len() {
+        let token = tokens[i];
+
+        match token {
+            "FROM" => {
+                if let Some(v) = tokens.get(i + 1) {
+                    from = v.parse().ok();
+                }
+                i += 2;
+            }
+            "TO" => {
+                if let Some(v) = tokens.get(i + 1) {
+                    to = v.parse().ok();
+                }
+                i += 2;
+            }
+            "ORDER_ID" => {
+                if let Some(v) = tokens.get(i + 1) {
+                    order_id = v.parse().ok();
+                }
+                i += 2;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    let mut sql = format!("SELECT * FROM weights");
+
+    let mut conditions  = Vec::new();
+    let mut bind_values = Vec::new();
+
+    // filters
+    if let Some(order_id) = order_id {
+        conditions.push("order_id = ?");
+        bind_values.push(Value::from(order_id));
+    }
+
+    if !conditions.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&conditions.join(" AND "));
+    }
+
+    // ORDER
+    sql.push_str(" ORDER BY timestamp");
+
+    // pagination
+    match (from, to) {
+        (Some(from), Some(to)) => {
+            if from >= to {
+                return None;
+            }
+
+            let limit = to.saturating_sub(from);
+            sql.push_str(" LIMIT ? OFFSET ?");
+            bind_values.push(Value::from(limit));
+            bind_values.push(Value::from(from));
+        }
+        (Some(from), None) => {
+            sql.push_str(" OFFSET ?");
+            bind_values.push(Value::from(from));
+        }
+        (None, Some(to)) => {
+            sql.push_str(" LIMIT ?");
+            bind_values.push(Value::from(to));
+        }
+        (None, None) => {}
+    }
+
+    None
 }
 
 fn parse_request(data: &str) -> Option<Request> {
     let mut parts = data.split_whitespace();
 
+    if parts.next()? != "GET" {
+        return None;
+    }
+
     let resource = match parts.next()? {
         "weights" => Resource::Weights,
         _ => return None,
     };
+
+
 
     let mut from     = None;
     let mut to       = None;

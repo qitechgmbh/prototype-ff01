@@ -19,7 +19,7 @@ fn main() -> std::io::Result<()> {
         send_log(&mut rng, &mut stream);
         i += 1;
 
-        thread::sleep(Duration::from_secs_f64(1.0 / 1024.0));
+        thread::sleep(Duration::from_secs_f64(1.0 / 32.0));
     }
 }
 
