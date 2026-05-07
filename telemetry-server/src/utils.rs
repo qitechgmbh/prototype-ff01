@@ -10,6 +10,11 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     )?;
 
     connection.execute(
+        "CREATE TYPE IF NOT EXISTS LogCategory AS ENUM ('debug', 'info', 'warn', 'error');", 
+        []
+    )?;
+
+    connection.execute(
         "CREATE TABLE IF NOT EXISTS weights (
             timestamp TIMESTAMP_NS,
             order_id  UINTEGER,
@@ -46,7 +51,7 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> anyhow::Result<()> {
     connection.execute(
         "CREATE TABLE IF NOT EXISTS logs (
             timestamp TIMESTAMP_NS NOT NULL,
-            category  TINYINT NOT NULL,
+            category  LogCategory NOT NULL,
             message   VARCHAR NOT NULL
         )",
         [],

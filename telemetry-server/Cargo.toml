@@ -16,7 +16,5 @@ serde="1.0.228"
 heapless={ version = "0.9.1", features = [] }
 
 arrow="58.2.0"
-
 crossbeam="0.8.4"
-
-arc-swap="1.9.1"
+httparse="1.10.1"

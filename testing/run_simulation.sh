@@ -7,7 +7,13 @@ SOCKET_PATH="/tmp/telemetry.sock"
 LIVE_PORT="9001" 
 QUERY_PORT="9000"
 
-ENV_EXPORT="export DB_PATH='$DB_PATH' SOCKET_PATH='$SOCKET_PATH' LIVE_PORT='$LIVE_PORT' QUERY_PORT='$QUERY_PORT';"
+ENV_EXPORT="""
+    export 
+    QITECH_TELEMETRY_DB_PATH='$DB_PATH' 
+    QITECH_TELEMETRY_SOCKET_PATH='$SOCKET_PATH' 
+    QITECH_TELEMETRY_LIVE_PORT='$LIVE_PORT' 
+    QITECH_TELEMETRY_QUERY_PORT='$QUERY_PORT';
+"""
 
 tmux kill-session -t telemetry_simulation 2>/dev/null
 tmux new-session -d -s telemetry_simulation
